@@ -4,7 +4,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 
 > ⚠️ This system is **not** a listed fire alarm control or annunciation device. It must never replace the certified fire alarm panels, their annunciators, the monitoring centre or emergency procedures. It never sends commands to panels.
 
-**Status:** Phase 2 (event core) — read-only BACnet collector, alarm ingest, live alarm board with sound and acknowledgement, monitoring-health banner. Floor plans arrive in Phase 3, SMS/WhatsApp/Push in Phase 4.
+**Status:** Phase 3 (floor maps) — floors per building, floor-plan upload with antivirus scanning, point placement (mouse or keyboard), live floor view with an accessible table, "show on map" from alarms, CSV import of point mapping. Builds on Phase 2 (read-only BACnet collector, live alarm board). SMS/WhatsApp/Push notifications arrive in Phase 4.
 
 ## Documentation (Hebrew)
 
@@ -12,6 +12,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [02 — Decisions v0.2](docs/02-decisions-v0.2.md)
 - [03 — Phase 1 plan](docs/03-phase1-plan.md)
 - [04 — Phase 2 plan](docs/04-phase2-plan.md)
+- [05 — Phase 3 plan](docs/05-phase3-plan.md)
 
 ## Confidentiality rule for this repository
 
@@ -122,6 +123,9 @@ docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 - `web` (Caddy) is the only published port (443): TLS, CSP/HSTS and other security headers, static UI, proxy to the API.
 - `server` runs read-only, without Linux capabilities, as a non-root user; migrations run on start.
 - `db` is on an internal network with no published ports.
+- `clamav` scans every uploaded floor plan before it can be viewed (fail-closed: if the scanner is down, uploads are refused). It needs access to the ClamAV signature mirrors, or an internal mirror.
+
+Floor plans: export to PNG/JPEG/WebP (max 10MB). SVG and PDF are intentionally not accepted. Plans are stored in the database (included in DB backups) and are never committed to this repository.
 
 ### Collector (on-site)
 
@@ -142,6 +146,7 @@ Prerequisites from the panel contractor (outside this repo): BACnet/IP enabled o
 - [ ] Encrypted, off-host database backups, with a tested restore.
 - [ ] Entra app registration reviewed by IT; MFA enforced via Conditional Access.
 - [ ] TLS certificate from the organisation's CA; firewall allows only 443 inbound.
+- [ ] Verify ClamAV detection with the EICAR test file on the deployed stack, and that signatures update (freshclam).
 - [ ] Verify the BACnet category mapping (`packages/shared/src/alarms.ts`) against the actual Siemens panel object list/PICS.
 - [ ] Firewall: collector host → panels UDP 47808; collector host → server 443 only.
 - [ ] Penetration test; accessibility review (WCAG 2.1 AA / IS 5568); privacy review; legal review of the draft policy pages.

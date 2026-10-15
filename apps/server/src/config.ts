@@ -35,6 +35,12 @@ const envSchema = z
     /** A collector silent for longer than this raises a communication alarm. */
     COLLECTOR_STALE_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
 
+    /** Antivirus for uploads. Production requires clamav (clamd INSTREAM). */
+    UPLOAD_SCANNER: z.enum(['clamav', 'none']).default('none'),
+    CLAMAV_HOST: z.string().default('clamav'),
+    CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+    CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
+
     RATE_LIMIT_MAX: z.coerce.number().int().min(10).default(300),
   })
   .superRefine((env, ctx) => {
@@ -49,6 +55,9 @@ const envSchema = z
       }
       if (!env.COOKIE_SECURE) {
         ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'COOKIE_SECURE must be true in production' });
+      }
+      if (env.UPLOAD_SCANNER !== 'clamav') {
+        ctx.addIssue({ code: 'custom', path: ['UPLOAD_SCANNER'], message: 'UPLOAD_SCANNER must be clamav in production' });
       }
       if (!env.PUBLIC_ORIGIN.startsWith('https://')) {
         ctx.addIssue({ code: 'custom', path: ['PUBLIC_ORIGIN'], message: 'PUBLIC_ORIGIN must be https in production' });

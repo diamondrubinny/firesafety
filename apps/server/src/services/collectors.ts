@@ -1,7 +1,7 @@
 import type { CollectorView, PointView, Page } from '@firesafety/shared';
 import type { Db } from '../db/pool.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
-import { conflict, isUniqueViolation, notFound } from '../lib/errors.js';
+import { badRequest, conflict, isUniqueViolation, notFound } from '../lib/errors.js';
 import type { CollectorIdentity } from './alarm-engine.js';
 
 export class CollectorService {
@@ -64,18 +64,25 @@ export class CollectorService {
               FROM collector`;
   }
 
-  async listPoints(q: { unmapped: boolean; limit: number; offset: number }): Promise<Page<PointView>> {
-    const where = q.unmapped ? 'WHERE p.building_id IS NULL AND d.building_id IS NULL' : '';
+  async listPoints(q: { unmapped: boolean; buildingId?: string; limit: number; offset: number }): Promise<Page<PointView>> {
+    const conds: string[] = [];
+    const params: unknown[] = [];
+    if (q.unmapped) conds.push('p.building_id IS NULL AND d.building_id IS NULL');
+    if (q.buildingId) {
+      params.push(q.buildingId);
+      conds.push(`COALESCE(p.building_id, d.building_id) = $${params.length}`);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const [items, total] = await Promise.all([
       this.db.query(
         `SELECT p.id, d.name AS device_name, d.device_instance, p.object_type, p.object_instance, p.name, p.description,
-                p.building_id, p.label, p.location, p.category
+                p.building_id, p.label, p.location, p.category, p.floor_id, p.x, p.y
            FROM point p JOIN bacnet_device d ON d.id = p.device_id ${where}
           ORDER BY d.device_instance, p.object_type, p.object_instance
-          LIMIT $1 OFFSET $2`,
-        [q.limit, q.offset],
+          LIMIT ${q.limit} OFFSET ${q.offset}`,
+        params,
       ),
-      this.db.query<{ count: string }>(`SELECT count(*) FROM point p JOIN bacnet_device d ON d.id = p.device_id ${where}`),
+      this.db.query<{ count: string }>(`SELECT count(*) FROM point p JOIN bacnet_device d ON d.id = p.device_id ${where}`, params),
     ]);
     return {
       items: items.rows.map((r) => ({
@@ -90,12 +97,29 @@ export class CollectorService {
         label: r.label,
         location: r.location,
         category: r.category,
+        floorId: r.floor_id,
+        x: r.x,
+        y: r.y,
       })),
       total: Number(total.rows[0]?.count ?? 0),
     };
   }
 
-  async patchPoint(id: string, patch: { buildingId?: string | null; label?: string | null; location?: string | null }): Promise<void> {
+  async patchPoint(
+    id: string,
+    patch: { buildingId?: string | null; label?: string | null; location?: string | null; floorId?: string | null; x?: number | null; y?: number | null },
+  ): Promise<void> {
+    if (patch.floorId) {
+      // A point placed on a floor always belongs to that floor's building.
+      const { rows } = await this.db.query<{ building_id: string }>('SELECT building_id FROM floor WHERE id = $1', [patch.floorId]);
+      if (!rows[0]) throw notFound('Floor');
+      if (patch.buildingId !== undefined && patch.buildingId !== rows[0].building_id) {
+        throw badRequest('floorId belongs to a different building');
+      }
+      patch = { ...patch, buildingId: rows[0].building_id };
+    } else if (patch.floorId === null) {
+      patch = { ...patch, x: null, y: null };
+    }
     const sets: string[] = [];
     const values: unknown[] = [];
     const add = (col: string, v: unknown) => {
@@ -105,6 +129,18 @@ export class CollectorService {
     if (patch.buildingId !== undefined) add('building_id', patch.buildingId);
     if (patch.label !== undefined) add('label', patch.label);
     if (patch.location !== undefined) add('location', patch.location);
+    if (patch.floorId !== undefined) add('floor_id', patch.floorId);
+    if (patch.x !== undefined) sets.push(`x = $${values.push(patch.x)}`);
+    if (patch.y !== undefined) sets.push(`y = $${values.push(patch.y)}`);
+    if (patch.buildingId !== undefined && patch.floorId === undefined) {
+      // Moving a point to another building detaches it from its floor.
+      const b = values.push(patch.buildingId);
+      const detach = `(floor_id IS NOT NULL AND (SELECT f.building_id FROM floor f WHERE f.id = point.floor_id) IS DISTINCT FROM $${b}::uuid)`;
+      sets.push(`floor_id = CASE WHEN ${detach} THEN NULL ELSE floor_id END`);
+      if (patch.x === undefined) {
+        sets.push(`x = CASE WHEN ${detach} THEN NULL ELSE x END`, `y = CASE WHEN ${detach} THEN NULL ELSE y END`);
+      }
+    }
     values.push(id);
     try {
       const r = await this.db.query(`UPDATE point SET ${sets.join(', ')} WHERE id = $${values.length}`, values);

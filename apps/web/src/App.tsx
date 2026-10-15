@@ -16,6 +16,8 @@ import { AlarmDetailPage } from './pages/AlarmDetailPage';
 import { AlarmHistoryPage } from './pages/AlarmHistoryPage';
 import { AdminCollectorsPage } from './pages/AdminCollectorsPage';
 import { AdminPointsPage } from './pages/AdminPointsPage';
+import { FloorPage } from './pages/FloorPage';
+import { AdminFloorEditorPage } from './pages/AdminFloorEditorPage';
 
 function RequireAuth({ children, roles }: { children: ReactNode; roles?: Role[] }) {
   const { me, loading, hasRole } = useAuth();
@@ -36,6 +38,8 @@ export function App() {
         <Route path="/" element={<RequireAuth><AlarmsPage /></RequireAuth>} />
         <Route path="/alarms/:id" element={<RequireAuth><AlarmDetailPage /></RequireAuth>} />
         <Route path="/history" element={<RequireAuth><AlarmHistoryPage /></RequireAuth>} />
+        <Route path="/floors/:id" element={<RequireAuth><FloorPage /></RequireAuth>} />
+        <Route path="/admin/floors/:id" element={<RequireAuth roles={['FireAdmin']}><AdminFloorEditorPage /></RequireAuth>} />
         <Route path="/buildings" element={<RequireAuth><BuildingsPage /></RequireAuth>} />
         <Route path="/admin/collectors" element={<RequireAuth roles={['FireAdmin']}><AdminCollectorsPage /></RequireAuth>} />
         <Route path="/admin/points" element={<RequireAuth roles={['FireAdmin']}><AdminPointsPage /></RequireAuth>} />

@@ -60,18 +60,33 @@ export const alarmListQuerySchema = z.object({
 export const alarmAckSchema = z.object({ note: trimmed(0, 1000).optional() });
 export const alarmNoteSchema = z.object({ text: trimmed(1, 1000) });
 
+const coord = z.number().min(0).max(1);
+
 export const pointPatchSchema = z
   .object({
     buildingId: uuidSchema.nullable().optional(),
     label: trimmed(0, 160).nullable().optional(),
     location: trimmed(0, 240).nullable().optional(),
+    floorId: uuidSchema.nullable().optional(),
+    x: coord.nullable().optional(),
+    y: coord.nullable().optional(),
   })
+  .refine((v) => (v.x === undefined) === (v.y === undefined), { message: 'x and y must be set together' })
   .refine((v) => Object.keys(v).length > 0, { message: 'at least one field is required' });
 
 export const devicePatchSchema = z.object({ buildingId: uuidSchema.nullable() });
 
 export const pointListQuerySchema = z.object({
   unmapped: z.enum(['1', '0']).optional(),
+  buildingId: uuidSchema.optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+});
+
+export const floorInputSchema = z.object({
+  name: trimmed(1, 80),
+  level: z.number().int().min(-20).max(300),
+});
+export const floorPatchSchema = floorInputSchema.partial().refine((v) => Object.keys(v).length > 0, {
+  message: 'at least one field is required',
 });

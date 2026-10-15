@@ -57,6 +57,9 @@ export function AlarmDetailPage() {
             <dt>מצב</dt><dd>{data.active ? 'פעיל' : `הסתיים ${data.clearedAt ? formatDateTime(data.clearedAt) : ''}`}</dd>
             <dt>אישור קבלה</dt><dd>{data.ackedAt ? `${formatDateTime(data.ackedAt)}${data.ackedBy ? `, ${data.ackedBy}` : ''}` : 'טרם אושר'}</dd>
           </dl>
+          {data.floorId && data.pointId && (
+            <p><Link className="btn" to={`/floors/${data.floorId}?point=${data.pointId}`}>הצגה במפת הקומה</Link></p>
+          )}
           <p className="muted small">אישור הקבלה נרשם במערכת זו בלבד, ואינו משפיע על הרכזת.</p>
 
           {canHandle && !data.ackedAt && (

@@ -102,6 +102,9 @@ function AlarmTable({ items, canHandle }: { items: AlarmView[]; canHandle: boole
                 <Link to={`/alarms/${a.id}`}>{a.kind === 'point' ? a.pointLabel : a.message}</Link>
                 {a.location && <div className="muted small">{a.location}</div>}
                 {a.deviceName && <div className="muted small">{a.deviceName}</div>}
+                {a.floorId && a.pointId && (
+                  <Link className="small" to={`/floors/${a.floorId}?point=${a.pointId}`}>הצגה במפה<span className="sr-only">: {a.pointLabel}</span></Link>
+                )}
               </td>
               <td>{formatDateTime(a.raisedAt)}</td>
               <td>{a.ackedAt ? <span>אושר{a.ackedBy ? ` ע"י ${a.ackedBy}` : ''}</span> : <strong>לא אושר</strong>}</td>

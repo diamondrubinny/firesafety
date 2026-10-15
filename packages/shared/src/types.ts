@@ -72,6 +72,7 @@ export interface AlarmView {
   location: string | null;
   deviceName: string | null;
   message: string | null;
+  floorId: string | null;
 }
 
 export interface AlarmDetail extends AlarmView {
@@ -110,4 +111,42 @@ export interface PointView {
   label: string | null;
   location: string | null;
   category: string;
+  floorId: string | null;
+  x: number | null;
+  y: number | null;
+}
+
+export interface FloorView {
+  id: string;
+  buildingId: string;
+  name: string;
+  level: number;
+  planFileId: string | null;
+  planStatus: 'pending' | 'clean' | 'infected' | 'error' | 'unscanned' | null;
+  abnormalCount: number;
+}
+
+export interface FloorPointView {
+  id: string;
+  label: string;
+  location: string | null;
+  x: number | null;
+  y: number | null;
+  category: import('./alarms.js').PointCategory;
+  alarmId: string | null;
+  acked: boolean | null;
+}
+
+export interface FloorDetail {
+  floor: FloorView;
+  building: { id: string; name: string };
+  points: FloorPointView[];
+}
+
+export interface ImportReport {
+  dryRun: boolean;
+  rows: number;
+  applied: number;
+  errors: { line: number; message: string }[];
+  preview: { line: number; pointId: string; changes: Record<string, unknown> }[];
 }

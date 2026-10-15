@@ -30,7 +30,8 @@ const COLUMNS = `
   p.id AS point_id,
   COALESCE(p.label, p.name, p.object_type || ':' || p.object_instance) AS point_label,
   COALESCE(p.location, p.description) AS location,
-  COALESCE(d.name, 'device ' || d.device_instance, c.name) AS device_name`;
+  COALESCE(d.name, 'device ' || d.device_instance, c.name) AS device_name,
+  p.floor_id`;
 
 /** Appends the scope predicate; returns the SQL fragment. */
 function scopeClause(scope: Scope, params: unknown[]): string {
@@ -55,6 +56,7 @@ interface Row {
   point_label: string | null;
   location: string | null;
   device_name: string | null;
+  floor_id: string | null;
 }
 
 const toView = (r: Row): AlarmView => ({
@@ -74,6 +76,7 @@ const toView = (r: Row): AlarmView => ({
   location: r.location,
   deviceName: r.device_name,
   message: r.message,
+  floorId: r.floor_id,
 });
 
 export class AlarmService {

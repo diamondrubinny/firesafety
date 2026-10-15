@@ -15,6 +15,10 @@ import { AlarmEngine } from './services/alarm-engine.js';
 import { AlarmService } from './services/alarms.js';
 import { CollectorService } from './services/collectors.js';
 import { RealtimeHub } from './services/realtime.js';
+import { FileService } from './services/files.js';
+import { FloorService } from './services/floors.js';
+import { PointImportService } from './services/point-import.js';
+import { ClamdScanner, NoopScanner, type FileScanner } from './services/scanner.js';
 import { EntraOidcProvider, type OidcProvider } from './auth/oidc.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
@@ -24,6 +28,7 @@ import { adminRoutes } from './routes/admin.js';
 import { alarmRoutes } from './routes/alarms.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { wsRoutes } from './routes/ws.js';
+import { floorRoutes } from './routes/floors.js';
 
 export interface Services {
   audit: AuditService;
@@ -33,6 +38,9 @@ export interface Services {
   alarms: AlarmService;
   engine: AlarmEngine;
   collectors: CollectorService;
+  files: FileService;
+  floors: FloorService;
+  pointImport: PointImportService;
 }
 
 declare module 'fastify' {
@@ -53,6 +61,8 @@ export interface BuildAppOptions {
   db: Db;
   oidc?: OidcProvider | null;
   logger?: FastifyServerOptions['logger'];
+  /** Override the upload scanner (tests). */
+  scanner?: FileScanner;
   /** Start interval timers for background jobs (disabled in tests). */
   backgroundJobs?: boolean;
 }
@@ -86,6 +96,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     alarms: new AlarmService(db, config.COLLECTOR_STALE_SECONDS),
     engine: new AlarmEngine(db),
     collectors: new CollectorService(db, config.COLLECTOR_STALE_SECONDS),
+    files: new FileService(
+      db,
+      opts.scanner ??
+        (config.UPLOAD_SCANNER === 'clamav'
+          ? new ClamdScanner(config.CLAMAV_HOST, config.CLAMAV_PORT, config.CLAMAV_TIMEOUT_MS)
+          : new NoopScanner()),
+    ),
+    floors: new FloorService(db),
+    pointImport: new PointImportService(db),
   });
   app.decorate('hub', new RealtimeHub(db, app.services.sessions));
   app.decorate('runJobs', async () => {
@@ -113,6 +132,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(cookie);
   await app.register(websocket, { options: { maxPayload: 1024 } });
   await app.register(rateLimit, { max: config.RATE_LIMIT_MAX, timeWindow: '1 minute' });
+
+  // Raw bodies for floor-plan uploads and CSV import (size limits are set per route).
+  app.addContentTypeParser(['image/png', 'image/jpeg', 'image/webp', 'application/octet-stream'], { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
+  app.addContentTypeParser(['text/csv', 'text/plain'], { parseAs: 'string' }, (_req, body, done) => done(null, body));
 
   // CSRF defence in depth (on top of SameSite cookies): state-changing requests must come from our origin.
   app.addHook('onRequest', async (req) => {
@@ -154,6 +177,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(adminRoutes, { prefix: '/api/admin' });
   await app.register(alarmRoutes, { prefix: '/api' });
   await app.register(wsRoutes, { prefix: '/api' });
+  await app.register(floorRoutes, { prefix: '/api' });
   await app.register(ingestRoutes);
 
   if (opts.backgroundJobs ?? true) {

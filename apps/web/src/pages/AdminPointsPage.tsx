@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Building, Page, PointCategory, PointView } from '@firesafety/shared';
+import type { Building, ImportReport, Page, PointCategory, PointView } from '@firesafety/shared';
 import { api, errorMessage } from '../lib/api';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { CategoryBadge } from '../components/Category';
@@ -22,6 +22,8 @@ export function AdminPointsPage() {
     <section aria-labelledby="points-title">
       <h1 id="points-title">רכזות ונקודות</h1>
       <p className="muted">שיוך מבנה קובע מי רואה את ההתראות. נקודה שאינה משויכת יורשת את המבנה של הרכזת. נקודה שאינה משויכת כלל גלויה רק למנהל המערכת.</p>
+
+      <CsvImport />
 
       <h2>רכזות</h2>
       {devices.isLoading && <Loading />}
@@ -124,5 +126,87 @@ function PointEditor({ point, buildings }: { point: PointView; buildings: Buildi
         <span aria-live="polite">{saved && <span className="ok">נשמר ✓</span>}{save.error && <span className="err">{errorMessage(save.error)}</span>}</span>
       </div>
     </li>
+  );
+}
+
+const TEMPLATE =
+  'device_instance,object_type,object_instance,building_code,floor_level,label,location,x,y\n' +
+  '1001,life-safety-point,7,BLD-A,2,גלאי עשן מסדרון,ליד חדר 204,40%,30%\n';
+
+function CsvImport() {
+  const qc = useQueryClient();
+  const [text, setText] = useState<string | null>(null);
+  const [fileName, setFileName] = useState('');
+  const [report, setReport] = useState<ImportReport | null>(null);
+  const run = useMutation({
+    mutationFn: (dryRun: boolean) => api.raw<ImportReport>('POST', `/api/admin/points/import?dryRun=${dryRun ? 1 : 0}`, text ?? '', 'text/csv'),
+    onSuccess: (r) => {
+      setReport(r);
+      if (!r.dryRun && r.applied > 0) {
+        void qc.invalidateQueries({ queryKey: ['points'] });
+        void qc.invalidateQueries({ queryKey: ['alarms'] });
+      }
+    },
+  });
+  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    setReport(null);
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) {
+      setText(null);
+      setFileName('');
+      return;
+    }
+    setFileName(f.name);
+    setText(await f.text());
+  };
+  const download = () => {
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + TEMPLATE], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'points-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="card" aria-labelledby="csv-title">
+      <h2 id="csv-title" className="h3">ייבוא שיוך נקודות מ-CSV</h2>
+      <p className="muted small">
+        מעדכן רק נקודות שה-Collector כבר דיווח. קודם מוצגת תצוגה מקדימה, ואם יש שגיאה אחת לפחות, דבר לא נשמר. מפריד: פסיק או נקודה-פסיק. x ו-y: 0–1 או באחוזים.
+      </p>
+      <div className="row">
+        <button type="button" className="btn btn-small" onClick={download}>הורדת קובץ לדוגמה</button>
+      </div>
+      <label htmlFor="csv-file">קובץ CSV (עד 2MB)</label>
+      <input id="csv-file" type="file" accept=".csv,text/csv" onChange={(e) => void onFile(e)} />
+      <div className="row">
+        <button type="button" className="btn" disabled={!text || run.isPending} onClick={() => run.mutate(true)}>בדיקה (ללא שמירה)</button>
+        <button type="button" className="btn btn-primary" disabled={!text || run.isPending || !report?.dryRun || report.errors.length > 0} onClick={() => run.mutate(false)}>
+          החלת הייבוא
+        </button>
+      </div>
+      {run.error && <div role="alert" className="alert alert-error">{errorMessage(run.error)}</div>}
+      <div aria-live="polite">
+        {report && (
+          <div className={`alert ${report.errors.length ? 'alert-error' : 'alert-success'}`}>
+            {report.dryRun
+              ? `בדיקת ${fileName}: ${report.rows} שורות, ${report.preview.length} עדכונים מוכנים, ${report.errors.length} שגיאות.`
+              : `הייבוא הוחל: ${report.applied} נקודות עודכנו.`}
+          </div>
+        )}
+      </div>
+      {!!report?.errors.length && (
+        <table className="table">
+          <caption>שגיאות לפי שורה</caption>
+          <thead><tr><th scope="col">שורה</th><th scope="col">שגיאה</th></tr></thead>
+          <tbody>
+            {report.errors.map((e) => (
+              <tr key={e.line}><td>{e.line}</td><td dir="ltr" className="code">{e.message}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }

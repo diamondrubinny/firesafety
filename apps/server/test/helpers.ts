@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { createPool, type Db } from '../src/db/pool.js';
 import type { OidcProvider } from '../src/auth/oidc.js';
+import type { FileScanner } from '../src/services/scanner.js';
 import { TEST_DATABASE_URL } from './global-setup.js';
 
 export const ORIGIN = 'https://firesafety.test';
@@ -27,12 +28,12 @@ export interface TestContext {
 }
 
 export async function createTestApp(
-  opts: { config?: Record<string, string>; oidc?: OidcProvider | null } = {},
+  opts: { config?: Record<string, string>; oidc?: OidcProvider | null; scanner?: FileScanner } = {},
 ): Promise<TestContext> {
   const config = testConfig(opts.config);
   const db = createPool(config);
   await resetData(db);
-  const app = await buildApp({ config, db, oidc: opts.oidc, logger: false, backgroundJobs: false });
+  const app = await buildApp({ config, db, oidc: opts.oidc, logger: false, backgroundJobs: false, scanner: opts.scanner });
   await app.ready();
   return {
     app,
@@ -47,7 +48,7 @@ export async function createTestApp(
 /** TRUNCATE bypasses the append-only row trigger on audit_log; only the test role uses it. */
 export async function resetData(db: Db): Promise<void> {
   await db.query(
-    'TRUNCATE alarm_note, alarm, event_log, point, bacnet_device, collector, audit_log, user_building_scope, user_session, oidc_login_state, building, faculty, app_user RESTART IDENTITY CASCADE',
+    'TRUNCATE alarm_note, alarm, event_log, point, floor, stored_file, bacnet_device, collector, audit_log, user_building_scope, user_session, oidc_login_state, building, faculty, app_user RESTART IDENTITY CASCADE',
   );
 }
 

@@ -179,3 +179,30 @@ textarea { font: inherit; padding: 0.5rem; border: 1px solid var(--border); bord
 .point-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.5rem 1rem; }
 .grid-3 > div { display: flex; flex-direction: column; gap: 0.25rem; }
+
+/* ---- Phase 3: floors ---- */
+.floor-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.floor-map { margin: 0 0 1rem; }
+.floor-map-canvas { position: relative; display: inline-block; max-inline-size: 100%; border: 1px solid var(--border); background: #fff; line-height: 0; }
+.floor-map-canvas img { display: block; max-inline-size: 100%; block-size: auto; user-select: none; }
+.floor-map-canvas.pickable { cursor: crosshair; }
+.marker { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 0.25rem; line-height: 1.2; pointer-events: none; direction: rtl; }
+.marker-symbol { display: grid; place-items: center; inline-size: 1.4rem; block-size: 1.4rem; border-radius: 50%; background: #fff; border: 2px solid currentColor; font-size: 0.8rem; font-weight: 700; }
+.marker-label { background: #fff; color: #1a1a1a; border: 1px solid currentColor; border-radius: 4px; padding: 0 0.3rem; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.marker-normal { color: #1b6e2d; }
+.marker-fire { color: #b00020; z-index: 3; }
+.marker-prealarm { color: #8a4b00; z-index: 2; }
+.marker-fault { color: #6b4f00; z-index: 2; }
+.marker-supervisory { color: #0b4f9c; }
+.marker-disabled { color: #4a4f57; }
+.marker-test { color: #5b3c99; }
+.marker-fire .marker-symbol { inline-size: 2rem; block-size: 2rem; font-size: 1.1rem; background: #b00020; color: #fff; border-color: #b00020; }
+.marker-unacked.marker-fire .marker-symbol { animation: marker-pulse 1s ease-in-out infinite; }
+.marker-highlight .marker-symbol, .marker-selected .marker-symbol { outline: 4px solid #ff9e00; outline-offset: 2px; }
+@keyframes marker-pulse { 50% { box-shadow: 0 0 0 10px rgb(176 0 32 / 0.25); } }
+.row-highlight { outline: 3px solid var(--focus); outline-offset: -3px; }
+.editor { display: grid; grid-template-columns: minmax(0, 3fr) minmax(16rem, 1fr); gap: 1rem; align-items: start; margin-block-start: 1rem; }
+.editor-panel select, .editor-panel input { inline-size: 100%; }
+.grid-2.tight { gap: 0.5rem; margin: 0; }
+.grid-2.tight > div { display: flex; flex-direction: column; gap: 0.25rem; }
+@media (max-width: 48rem) { .editor { grid-template-columns: 1fr; } }
