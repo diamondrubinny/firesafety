@@ -1,0 +1,30 @@
+{
+  "name": "firesafety",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/server",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "npm run build -w @firesafety/shared && npm run build -w @firesafety/server && npm run build -w @firesafety/web",
+    "build:shared": "npm run build -w @firesafety/shared",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run build:shared && npm run test --workspaces --if-present",
+    "dev:server": "npm run build:shared && npm run dev -w @firesafety/server",
+    "dev:web": "npm run build:shared && npm run dev -w @firesafety/web",
+    "db:migrate": "npm run migrate -w @firesafety/server"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2"
+  },
+  "packageManager": "npm@11.21.0"
+}
