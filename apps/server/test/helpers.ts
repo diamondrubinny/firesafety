@@ -32,7 +32,7 @@ export async function createTestApp(
   const config = testConfig(opts.config);
   const db = createPool(config);
   await resetData(db);
-  const app = await buildApp({ config, db, oidc: opts.oidc, logger: false });
+  const app = await buildApp({ config, db, oidc: opts.oidc, logger: false, backgroundJobs: false });
   await app.ready();
   return {
     app,
@@ -47,7 +47,7 @@ export async function createTestApp(
 /** TRUNCATE bypasses the append-only row trigger on audit_log; only the test role uses it. */
 export async function resetData(db: Db): Promise<void> {
   await db.query(
-    'TRUNCATE audit_log, user_building_scope, user_session, oidc_login_state, building, faculty, app_user RESTART IDENTITY CASCADE',
+    'TRUNCATE alarm_note, alarm, event_log, point, bacnet_device, collector, audit_log, user_building_scope, user_session, oidc_login_state, building, faculty, app_user RESTART IDENTITY CASCADE',
   );
 }
 

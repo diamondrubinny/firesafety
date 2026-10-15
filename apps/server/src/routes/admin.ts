@@ -1,6 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
   buildingInputSchema,
+  collectorInputSchema,
+  devicePatchSchema,
+  pointListQuerySchema,
+  pointPatchSchema,
   buildingPatchSchema,
   facultyInputSchema,
   idParamSchema,
@@ -66,7 +70,59 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { buildingIds } = parse(userScopeInputSchema, req.body);
     const result = await services.users.setScope(id, buildingIds);
     await audit(req, 'user.scope.set', 'user', id, result);
+    await app.hub.refresh();
     return { buildingIds: [...new Set(buildingIds)] };
+  });
+
+  // Collectors: the token is returned once and never stored in plaintext.
+  app.get('/collectors', async () => services.collectors.list());
+
+  app.post('/collectors', async (req, reply) => {
+    const { name } = parse(collectorInputSchema, req.body);
+    const { collector, token } = await services.collectors.create(name);
+    await audit(req, 'collector.create', 'collector', collector.id, { name });
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(201).send({ collector, token });
+  });
+
+  app.post('/collectors/:id/rotate-token', async (req, reply) => {
+    const { id } = parse(idParamSchema, req.params);
+    const token = await services.collectors.rotateToken(id);
+    await audit(req, 'collector.rotate_token', 'collector', id);
+    reply.header('Cache-Control', 'no-store');
+    return { token };
+  });
+
+  app.post('/collectors/:id/deactivate', async (req) => {
+    const { id } = parse(idParamSchema, req.params);
+    await services.collectors.setActive(id, false);
+    await audit(req, 'collector.deactivate', 'collector', id);
+    app.hub.broadcast({ type: 'status' });
+    return { ok: true };
+  });
+
+  // BACnet devices and points: mapping to buildings drives alarm visibility (scope).
+  app.get('/devices', async () => services.collectors.listDevices());
+
+  app.patch('/devices/:id', async (req) => {
+    const { id } = parse(idParamSchema, req.params);
+    const { buildingId } = parse(devicePatchSchema, req.body);
+    await services.collectors.patchDevice(id, buildingId);
+    await audit(req, 'device.update', 'device', id, { buildingId });
+    return { ok: true };
+  });
+
+  app.get('/points', async (req) => {
+    const q = parse(pointListQuerySchema, req.query);
+    return services.collectors.listPoints({ unmapped: q.unmapped === '1', limit: q.limit, offset: q.offset });
+  });
+
+  app.patch('/points/:id', async (req) => {
+    const { id } = parse(idParamSchema, req.params);
+    const patch = parse(pointPatchSchema, req.body);
+    await services.collectors.patchPoint(id, patch);
+    await audit(req, 'point.update', 'point', id, { fields: Object.keys(patch) });
+    return { ok: true };
   });
 
   // Audit

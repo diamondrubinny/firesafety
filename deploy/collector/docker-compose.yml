@@ -1,0 +1,20 @@
+# Runs on a small Linux host/VM inside the fire-panel network (not on the server).
+# BACnet/IP uses UDP 47808 (incl. broadcasts), so host networking is required.
+name: firesafety-collector
+
+services:
+  collector:
+    build: ../../apps/collector
+    restart: unless-stopped
+    network_mode: host
+    env_file: ./collector.env          # never commit; see collector.env.example
+    volumes:
+      - outbox:/data
+      - ./local/ca.pem:/certs/ca.pem:ro  # CA that signed the server certificate
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+volumes:
+  outbox:

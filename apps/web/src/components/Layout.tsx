@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { ROLE_LABELS_HE } from '@firesafety/shared';
 import { useAuth } from '../lib/auth';
+import { SystemBanner } from './SystemBanner';
 
 export function Layout() {
   const { me, hasRole, logout } = useAuth();
@@ -13,10 +14,14 @@ export function Layout() {
         <div className="brand">ניטור בטיחות אש</div>
         <nav aria-label="ניווט ראשי">
           <ul>
-            <li><NavLink to="/">מבנים</NavLink></li>
+            <li><NavLink to="/" end>אירועים פעילים</NavLink></li>
+            <li><NavLink to="/history">היסטוריה</NavLink></li>
+            <li><NavLink to="/buildings">מבנים</NavLink></li>
             {hasRole('FireAdmin') && (
               <>
                 <li><NavLink to="/admin/buildings">ניהול מבנים</NavLink></li>
+                <li><NavLink to="/admin/collectors">Collectors</NavLink></li>
+                <li><NavLink to="/admin/points">רכזות ונקודות</NavLink></li>
                 <li><NavLink to="/admin/users">משתמשים והרשאות</NavLink></li>
                 <li><NavLink to="/admin/audit">יומן פעולות</NavLink></li>
               </>
@@ -38,6 +43,7 @@ export function Layout() {
       <div className="disclaimer" role="note">
         מערכת משלימה לניטור בלבד. היא אינה מחליפה את רכזות האש, את לוחות ההפעלה, את המוקד ואת נהלי החירום.
       </div>
+      {me && <SystemBanner />}
       <main id="main" tabIndex={-1}>
         <Outlet />
       </main>

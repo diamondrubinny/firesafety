@@ -37,3 +37,16 @@ jobs:
       - run: npm run build
       - name: Dependency audit (production deps)
         run: npm audit --omit=dev --audit-level=high
+
+  collector:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q

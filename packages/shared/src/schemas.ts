@@ -47,3 +47,31 @@ export const devLoginSchema = z.object({
   roles: z.array(z.enum(ROLES)).min(1),
 });
 export type DevLoginInput = z.infer<typeof devLoginSchema>;
+
+export const collectorInputSchema = z.object({ name: trimmed(1, 80) });
+
+export const alarmListQuerySchema = z.object({
+  state: z.enum(['active', 'all']).default('active'),
+  category: z.enum(['fire', 'prealarm', 'fault', 'supervisory', 'disabled', 'test']).optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+});
+
+export const alarmAckSchema = z.object({ note: trimmed(0, 1000).optional() });
+export const alarmNoteSchema = z.object({ text: trimmed(1, 1000) });
+
+export const pointPatchSchema = z
+  .object({
+    buildingId: uuidSchema.nullable().optional(),
+    label: trimmed(0, 160).nullable().optional(),
+    location: trimmed(0, 240).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'at least one field is required' });
+
+export const devicePatchSchema = z.object({ buildingId: uuidSchema.nullable() });
+
+export const pointListQuerySchema = z.object({
+  unmapped: z.enum(['1', '0']).optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+});

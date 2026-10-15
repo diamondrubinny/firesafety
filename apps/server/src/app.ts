@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import websocket from '@fastify/websocket';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/pool.js';
 import { HttpError } from './lib/errors.js';
@@ -10,18 +11,28 @@ import { AuditService } from './services/audit.js';
 import { BuildingService } from './services/buildings.js';
 import { SessionService } from './services/sessions.js';
 import { UserService } from './services/users.js';
+import { AlarmEngine } from './services/alarm-engine.js';
+import { AlarmService } from './services/alarms.js';
+import { CollectorService } from './services/collectors.js';
+import { RealtimeHub } from './services/realtime.js';
 import { EntraOidcProvider, type OidcProvider } from './auth/oidc.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
 import { buildingRoutes } from './routes/buildings.js';
 import { adminRoutes } from './routes/admin.js';
+import { alarmRoutes } from './routes/alarms.js';
+import { ingestRoutes } from './routes/ingest.js';
+import { wsRoutes } from './routes/ws.js';
 
 export interface Services {
   audit: AuditService;
   users: UserService;
   sessions: SessionService;
   buildings: BuildingService;
+  alarms: AlarmService;
+  engine: AlarmEngine;
+  collectors: CollectorService;
 }
 
 declare module 'fastify' {
@@ -30,6 +41,9 @@ declare module 'fastify' {
     db: Db;
     services: Services;
     oidc: OidcProvider | null;
+    hub: RealtimeHub;
+    /** Runs periodic jobs once (watchdog, WS session refresh, purge). Exposed for tests. */
+    runJobs: () => Promise<void>;
     cookieNames: { session: string; login: string };
   }
 }
@@ -39,6 +53,8 @@ export interface BuildAppOptions {
   db: Db;
   oidc?: OidcProvider | null;
   logger?: FastifyServerOptions['logger'];
+  /** Start interval timers for background jobs (disabled in tests). */
+  backgroundJobs?: boolean;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -67,6 +83,14 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       absoluteHours: config.SESSION_ABSOLUTE_HOURS,
     }),
     buildings: new BuildingService(db),
+    alarms: new AlarmService(db, config.COLLECTOR_STALE_SECONDS),
+    engine: new AlarmEngine(db),
+    collectors: new CollectorService(db, config.COLLECTOR_STALE_SECONDS),
+  });
+  app.decorate('hub', new RealtimeHub(db, app.services.sessions));
+  app.decorate('runJobs', async () => {
+    app.hub.notify(await app.services.engine.checkCollectors(config.COLLECTOR_STALE_SECONDS));
+    await app.hub.refresh();
   });
   app.decorate(
     'oidc',
@@ -87,20 +111,24 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     crossOriginResourcePolicy: { policy: 'same-origin' },
   });
   await app.register(cookie);
+  await app.register(websocket, { options: { maxPayload: 1024 } });
   await app.register(rateLimit, { max: config.RATE_LIMIT_MAX, timeWindow: '1 minute' });
 
   // CSRF defence in depth (on top of SameSite cookies): state-changing requests must come from our origin.
   app.addHook('onRequest', async (req) => {
     req.ipHash = hashIp(req.ip, config.AUDIT_IP_PEPPER);
-    if (SAFE_METHODS.has(req.method)) return;
+    // Collectors are not browsers: no cookies, bearer-token auth (see routes/ingest.ts).
+    if (SAFE_METHODS.has(req.method) || req.url.startsWith('/ingest/')) return;
     const origin = req.headers.origin;
     if (origin !== config.PUBLIC_ORIGIN) {
       throw new HttpError(403, 'bad_origin', 'Cross-origin request rejected');
     }
   });
 
-  // Session resolution. Absence of a valid session is not an error here; guards decide.
-  app.addHook('preHandler', async (req) => {
+  // Session resolution (onRequest so it is available to preValidation, e.g. the WebSocket upgrade).
+  // Absence of a valid session is not an error here; guards decide.
+  app.addHook('onRequest', async (req) => {
+    if (req.url.startsWith('/ingest/')) return;
     const token = req.cookies[app.cookieNames.session];
     if (token) req.user = await app.services.sessions.resolve(token);
   });
@@ -124,6 +152,18 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(meRoutes, { prefix: '/api' });
   await app.register(buildingRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
+  await app.register(alarmRoutes, { prefix: '/api' });
+  await app.register(wsRoutes, { prefix: '/api' });
+  await app.register(ingestRoutes);
+
+  if (opts.backgroundJobs ?? true) {
+    const jobs = setInterval(() => {
+      app.runJobs().catch((err: unknown) => app.log.error({ err }, 'background job failed'));
+    }, 10_000);
+    jobs.unref();
+    app.addHook('onClose', async () => clearInterval(jobs));
+  }
+  app.addHook('preClose', async () => app.hub.closeAll());
 
   return app;
 }

@@ -9,3 +9,14 @@ coverage/
 
 # Site-specific deployment data (certificates, real names, IPs, floor plans)
 deploy/local/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.sqlite3
+deploy/collector/collector.env
+deploy/collector/local/
+build/
+*.egg-info/

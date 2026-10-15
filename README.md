@@ -4,13 +4,14 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 
 > ⚠️ This system is **not** a listed fire alarm control or annunciation device. It must never replace the certified fire alarm panels, their annunciators, the monitoring centre or emergency procedures. It never sends commands to panels.
 
-**Status:** Phase 1 (foundation) — auth, RBAC, building scope, audit, admin UI, deployment. BACnet collector and events arrive in Phase 2.
+**Status:** Phase 2 (event core) — read-only BACnet collector, alarm ingest, live alarm board with sound and acknowledgement, monitoring-health banner. Floor plans arrive in Phase 3, SMS/WhatsApp/Push in Phase 4.
 
 ## Documentation (Hebrew)
 
 - [01 — Desigo research & MVP plan](docs/01-desigo-research-and-mvp-plan.md)
 - [02 — Decisions v0.2](docs/02-decisions-v0.2.md)
 - [03 — Phase 1 plan](docs/03-phase1-plan.md)
+- [04 — Phase 2 plan](docs/04-phase2-plan.md)
 
 ## Confidentiality rule for this repository
 
@@ -21,8 +22,9 @@ Do **not** commit: the organisation's name, contractor/vendor-contact details, r
 ```
 packages/shared   Zod schemas, roles and API types shared by server and web
 apps/server       Fastify 5 API: Entra OIDC, sessions, RBAC + building scope, audit, SQL migrations
-apps/web          React 19 + Vite, Hebrew RTL, accessible UI
-deploy/           docker-compose (PostgreSQL, server, Caddy) and Caddyfile
+apps/web          React 19 + Vite, Hebrew RTL, accessible UI, live alarm board
+apps/collector    Python (BACpypes3) read-only BACnet/IP collector + fs_simulator (dev/test panel)
+deploy/           docker-compose (PostgreSQL, server, Caddy), Caddyfile, collector/ (on-site compose)
 docs/             Research, decisions and phase plans
 ```
 
@@ -58,6 +60,28 @@ npm run dev:web      # http://localhost:5173 — open this one
 
 `AUTH_MODE=dev` shows a development login form. It is refused at startup when `NODE_ENV=production`.
 
+### Collector + simulator (local)
+
+```bash
+cd apps/collector
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+
+# 1. In the web UI (FireAdmin): Collectors → create → copy the one-time token.
+# 2. Simulated panel (BACnet device 1001, 50 detectors, control API on localhost:8099)
+.venv/bin/python -m fs_simulator --address 127.0.0.1/8:47808 --device 1001 --points 50 --notify 127.0.0.1:47809
+
+# 3. Collector (another terminal)
+FS_SERVER_URL=http://localhost:3000 FS_ALLOW_INSECURE_HTTP=1 FS_COLLECTOR_TOKEN=fsc_... \
+FS_BACNET_ADDRESS=127.0.0.1/8:47809 FS_BACNET_DEVICE_ID=4000001 FS_PANELS=1001@127.0.0.1:47808 \
+FS_POLL_INTERVAL=2 .venv/bin/python -m fs_collector
+
+# 4. Trigger states on the simulated panel
+curl -X POST localhost:8099/points/7 -d '{"state":"alarm"}'      # alarm|pre-alarm|fault|supervisory|disabled|test-alarm|quiet
+curl -X POST localhost:8099/offline -d '{"offline":true}'        # simulate a dead panel link
+```
+
+The simulator is for development and testing only.
+
 ## Checks
 
 ```bash
@@ -66,9 +90,12 @@ npm run typecheck
 npm test            # needs PostgreSQL; override with TEST_DATABASE_URL
 npm run build
 npm audit --omit=dev
+(cd apps/collector && .venv/bin/python -m pytest -q)
 ```
 
-The server test-suite runs against a real PostgreSQL and covers: session security, OIDC flow (with a fake provider), tenant/role/MFA policy, open-redirect protection, CSRF origin checks, IDOR/building scope, admin authorization, validation, append-only audit log and security headers.
+The collector suite includes real BACnet/IP integration tests against the simulator (paging, notifications, inventory, panel outage/resync, uplink outage) and a test that forbids any state-changing BACnet service in the collector code.
+
+The server test-suite runs against a real PostgreSQL and covers: collector ingest (auth, idempotency, ordering, reconcile, watchdog), alarm scope and acknowledgement, WebSocket auth/origin/scope, session security, OIDC flow (with a fake provider), tenant/role/MFA policy, open-redirect protection, CSRF origin checks, IDOR/building scope, admin authorization, validation, append-only audit log and security headers.
 
 ## Microsoft Entra ID setup (IT department)
 
@@ -96,10 +123,25 @@ docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 - `server` runs read-only, without Linux capabilities, as a non-root user; migrations run on start.
 - `db` is on an internal network with no published ports.
 
-### Before production (Phase 1 items)
+### Collector (on-site)
+
+Runs on a small Linux host/VM **inside the fire-panel network**, read-only, outbound HTTPS only:
+
+```bash
+cd deploy/collector
+cp collector.env.example collector.env     # fill in: token, panel list, BACnet identity (never commit)
+mkdir -p local && cp /path/to/org-ca.pem local/ca.pem
+docker compose up -d --build
+```
+
+Prerequisites from the panel contractor (outside this repo): BACnet/IP enabled on the panel or access point, the required BACnet licence, a unique device id for the collector, and — optionally — the collector registered as a notification recipient for real-time events (otherwise it relies on polling every few seconds).
+
+### Before production
 
 - [ ] Use separate PostgreSQL roles: an owner role for migrations and an app role with `SELECT/INSERT` only on `audit_log` (`TRUNCATE` bypasses the append-only trigger).
 - [ ] Encrypted, off-host database backups, with a tested restore.
 - [ ] Entra app registration reviewed by IT; MFA enforced via Conditional Access.
 - [ ] TLS certificate from the organisation's CA; firewall allows only 443 inbound.
+- [ ] Verify the BACnet category mapping (`packages/shared/src/alarms.ts`) against the actual Siemens panel object list/PICS.
+- [ ] Firewall: collector host → panels UDP 47808; collector host → server 443 only.
 - [ ] Penetration test; accessibility review (WCAG 2.1 AA / IS 5568); privacy review; legal review of the draft policy pages.

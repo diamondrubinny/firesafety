@@ -1,0 +1,5 @@
+.venv
+tests
+fs_simulator
+**/__pycache__
+*.sqlite3*

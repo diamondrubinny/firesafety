@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fs-collector"
+version = "0.2.0"
+description = "Read-only BACnet/IP collector for fire alarm panels (supplementary monitoring)"
+requires-python = ">=3.11"
+dependencies = ["bacpypes3==0.0.110"]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["fs_collector"]

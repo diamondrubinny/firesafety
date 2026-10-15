@@ -54,3 +54,60 @@ export interface ApiError {
   message: string;
   details?: unknown;
 }
+
+export interface AlarmView {
+  id: string;
+  kind: import('./alarms.js').AlarmKind;
+  category: import('./alarms.js').AlarmCategory;
+  priority: number;
+  active: boolean;
+  raisedAt: string;
+  clearedAt: string | null;
+  ackedAt: string | null;
+  ackedBy: string | null;
+  buildingId: string | null;
+  buildingName: string | null;
+  pointId: string | null;
+  pointLabel: string | null;
+  location: string | null;
+  deviceName: string | null;
+  message: string | null;
+}
+
+export interface AlarmDetail extends AlarmView {
+  notes: { id: string; ts: string; author: string | null; text: string }[];
+  history: { ts: string; category: string; eventState: string | null; lifeSafetyState: string | null; source: string }[];
+}
+
+export type AlarmSummary = Record<import('./alarms.js').AlarmCategory, { active: number; unacked: number }>;
+
+export interface SystemStatus {
+  collectors: { total: number; online: number };
+  devices: { total: number; online: number };
+  degraded: boolean;
+  checkedAt: string;
+}
+
+export interface CollectorView {
+  id: string;
+  name: string;
+  active: boolean;
+  online: boolean;
+  lastSeenAt: string | null;
+  version: string | null;
+  bufferDepth: number | null;
+}
+
+export interface PointView {
+  id: string;
+  deviceName: string | null;
+  deviceInstance: number;
+  objectType: string;
+  objectInstance: number;
+  name: string | null;
+  description: string | null;
+  buildingId: string | null;
+  label: string | null;
+  location: string | null;
+  category: string;
+}

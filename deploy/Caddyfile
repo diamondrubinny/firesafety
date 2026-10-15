@@ -18,7 +18,7 @@
 		-Server
 	}
 
-	@backend path /api/* /auth/* /healthz
+	@backend path /api/* /auth/* /ingest/* /healthz
 	handle @backend {
 		reverse_proxy server:3000
 	}

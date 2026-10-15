@@ -16,7 +16,7 @@ export function BuildingDetailPage() {
 
   return (
     <section>
-      <p><Link to="/">חזרה לרשימת המבנים</Link></p>
+      <p><Link to="/buildings">חזרה לרשימת המבנים</Link></p>
       {isLoading && <Loading />}
       {error && <ErrorBox error={error} />}
       {data && (

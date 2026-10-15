@@ -9,8 +9,9 @@ export default defineConfig({
     port: 5173,
     // Same-origin in development: the browser talks only to Vite, which forwards API/auth calls.
     proxy: {
-      '/api': { target: api },
+      '/api': { target: api, ws: true },
       '/auth': { target: api },
+      '/ingest': { target: api },
     },
   },
   build: {

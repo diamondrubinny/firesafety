@@ -32,6 +32,9 @@ const envSchema = z
     /** Require the "mfa" value in the "amr" claim. Requires verification against the tenant's token configuration. */
     OIDC_REQUIRE_MFA: bool.default(false),
 
+    /** A collector silent for longer than this raises a communication alarm. */
+    COLLECTOR_STALE_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
+
     RATE_LIMIT_MAX: z.coerce.number().int().min(10).default(300),
   })
   .superRefine((env, ctx) => {
