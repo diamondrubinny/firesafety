@@ -65,6 +65,8 @@ export const ingestBatchSchema = z.object({
   points: z.array(ingestPointSchema).max(5000).default([]),
   events: z.array(ingestEventSchema).max(2000).default([]),
   snapshots: z.array(ingestSnapshotSchema).max(500).default([]),
+  /** Outbox seqs of the inventory items carried in `points` (they share the sequence; used for completeness metrics). */
+  inventorySeqs: z.array(z.number().int().min(1)).max(500).default([]),
 });
 
 export type IngestBatch = z.infer<typeof ingestBatchSchema>;

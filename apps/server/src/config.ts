@@ -68,6 +68,9 @@ const envSchema = z
     RETENTION_ALARMS_DAYS: z.coerce.number().int().min(365).max(7300).default(2555),
 
     RATE_LIMIT_MAX: z.coerce.number().int().min(10).default(300),
+
+    /** Bearer token for GET /monitoring/v1/status (external uptime checks). Unset = endpoint disabled. */
+    MONITORING_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
   })
   .superRefine((env, ctx) => {
     if (env.SETTINGS_ENCRYPTION_KEY && Buffer.from(env.SETTINGS_ENCRYPTION_KEY, 'base64').length !== 32) {

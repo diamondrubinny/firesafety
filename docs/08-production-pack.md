@@ -107,7 +107,7 @@
 - [ ] `deploy/sql/least-privilege.sql`, ואחריו `MIGRATION_DATABASE_URL` (owner) ו-`DATABASE_URL` (app). ✔ נבדק: לתפקיד ה-app אין UPDATE/DELETE/TRUNCATE על audit_log.
 - [ ] `SETTINGS_ENCRYPTION_KEY`, `AUDIT_IP_PEPPER` ו-`OIDC_*` ב-secret store. `.env` בהרשאות 600.
 - [ ] גיבוי יומי: `deploy/backup/backup.sh` ב-cron, העתקה off-host, **ובדיקת שחזור חודשית** עם `restore.sh` לבסיס בדיקה. ✔ נבדק: הצפנה, שחזור, זיהוי passphrase שגוי, זיהוי קובץ ששונה.
-- [ ] ניטור חיצוני (Uptime) ל-`/healthz` ולבאנר "degraded" (`/api/system/status`).
+- [ ] ניטור חיצוני (Uptime) ל-`/monitoring/v1/status` עם `MONITORING_TOKEN` (200 או 503), ו-`MONITORING_ALLOWED_CIDRS` מצומצם לשרת הניטור (docs/10, סעיף 9).
 - [ ] ClamAV: בדיקת EICAR בפועל ועדכון חתימות.
 
 ### אימות והרשאות
@@ -149,7 +149,7 @@
    - הקבלן מפעיל BACnet ורישיון, ומוסיף את ה-Collector כנמען התראות (אופציונלי).
    - Object list / EDE ← ייבוא CSV של שיוך הנקודות.
    - תוכנית קומה ← שיבוץ.
-3. **4 שבועות של מדידה:**
+3. **4 שבועות של מדידה** (מסך **ביצועי מערכת**, docs/11):
    - כל אירוע ברכזת מופיע במערכת. משווים מול יומן הרכזת: **יעד 100%**.
    - השהיה מרכזת למסך (יעד פחות מ-3 שניות), ולהודעה (יעד פחות מ-10 שניות).
    - אפס התראות שווא שמקורן במערכת. זמינות Collector ושרת.

@@ -82,7 +82,7 @@ export class AlarmEngine {
 
       for (const d of batch.devices) {
         ensureDeviceCapacity(d.instance);
-        const { rows } = await c.query<{ id: string; building_id: string | null }>(
+        const { rows } = await c.query<{ id: string; building_id: string | null; last_seen_at: Date | null }>(
           `INSERT INTO bacnet_device (collector_id, device_instance, address, name, vendor, model, online, last_error, last_seen_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $7 THEN now() END)
            ON CONFLICT (collector_id, device_instance) DO UPDATE SET
@@ -93,14 +93,14 @@ export class AlarmEngine {
              online = EXCLUDED.online,
              last_error = EXCLUDED.last_error,
              last_seen_at = COALESCE(EXCLUDED.last_seen_at, bacnet_device.last_seen_at)
-           RETURNING id, building_id`,
+           RETURNING id, building_id, last_seen_at`,
           [collector.id, d.instance, d.address, d.name ?? null, d.vendor ?? null, d.model ?? null, d.online, d.error ?? null],
         );
         const dev = rows[0]!;
         deviceIds.set(d.instance, dev.id);
         const changed = d.online
           ? await this.clearComm(c, 'device_comm', 'device_id', dev.id)
-          : await this.raiseComm(c, 'device_comm', 'device_id', dev.id, `${DEVICE_COMM_MESSAGE}${d.name ? ` ${d.name}` : ''}`);
+          : await this.raiseComm(c, 'device_comm', 'device_id', dev.id, `${DEVICE_COMM_MESSAGE}${d.name ? ` ${d.name}` : ''}`, dev.last_seen_at);
         if (changed) changes.push({ buildingId: dev.building_id, category: d.online ? 'normal' : 'fault', kind: 'device_comm' });
       }
 
@@ -148,6 +148,20 @@ export class AlarmEngine {
         ackedSeq = Math.max(ackedSeq, item.seq);
       }
 
+      // Record sequence numbers that do not land in event_log, for completeness reporting.
+      const aux = [
+        ...batch.snapshots.map((s) => [s.seq, 'snapshot'] as const),
+        ...batch.inventorySeqs.map((s) => [s, 'inventory'] as const),
+      ];
+      if (aux.length > 0) {
+        await c.query(
+          `INSERT INTO ingest_aux_seq (collector_id, epoch, seq, kind)
+           SELECT $1, $2, s, k FROM unnest($3::bigint[], $4::text[]) AS t(s, k)
+           ON CONFLICT DO NOTHING`,
+          [collector.id, batch.epoch, aux.map((a) => a[0]), aux.map((a) => a[1])],
+        );
+      }
+
       await c.query(
         `UPDATE collector SET last_seen_at = now(), version = $2, buffer_depth = $3, epoch = $4, acked_seq = $5 WHERE id = $1`,
         [collector.id, batch.collector.version, batch.collector.bufferDepth, batch.epoch, ackedSeq],
@@ -161,15 +175,15 @@ export class AlarmEngine {
 
   /** Raises a collector_comm alarm for every active collector silent for longer than staleSeconds. */
   async checkCollectors(staleSeconds: number): Promise<AlarmChange[]> {
-    const { rows } = await this.db.query<{ id: string; name: string }>(
-      `SELECT id, name FROM collector
+    const { rows } = await this.db.query<{ id: string; name: string; since: Date }>(
+      `SELECT id, name, COALESCE(last_seen_at, created_at) AS since FROM collector
         WHERE active AND COALESCE(last_seen_at, created_at) < now() - make_interval(secs => $1)`,
       [staleSeconds],
     );
     const changes: AlarmChange[] = [];
     for (const col of rows) {
       const raised = await withTransaction(this.db, (c) =>
-        this.raiseComm(c, 'collector_comm', 'collector_id', col.id, `${COLLECTOR_COMM_MESSAGE} (${col.name})`),
+        this.raiseComm(c, 'collector_comm', 'collector_id', col.id, `${COLLECTOR_COMM_MESSAGE} (${col.name})`, col.since),
       );
       if (raised) changes.push({ buildingId: null, category: 'fault', kind: 'collector_comm' });
     }
@@ -261,12 +275,16 @@ export class AlarmEngine {
     return changes;
   }
 
-  private async raiseComm(c: Client, kind: 'device_comm' | 'collector_comm', col: 'device_id' | 'collector_id', id: string, message: string): Promise<boolean> {
+  /**
+   * `since` is the last successful contact: the outage started then, not when it was detected
+   * (the watchdog fires only after COLLECTOR_STALE_SECONDS). Keeps availability metrics honest.
+   */
+  private async raiseComm(c: Client, kind: 'device_comm' | 'collector_comm', col: 'device_id' | 'collector_id', id: string, message: string, since: Date | null = null): Promise<boolean> {
     const r = await c.query(
       `INSERT INTO alarm (kind, ${col}, category, priority, message, raised_at)
-       VALUES ($1, $2, 'fault', $3, $4, now())
+       VALUES ($1, $2, 'fault', $3, $4, LEAST(COALESCE($5::timestamptz, now()), now()))
        ON CONFLICT DO NOTHING`,
-      [kind, id, CATEGORY_PRIORITY.fault, message],
+      [kind, id, CATEGORY_PRIORITY.fault, message, since],
     );
     return r.rowCount === 1;
   }

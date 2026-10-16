@@ -5,6 +5,7 @@ import {
   type AlarmDetail,
   type AlarmSummary,
   type AlarmView,
+  type MonitoringStatus,
   type Page,
   type SystemStatus,
 } from '@firesafety/shared';
@@ -189,5 +190,36 @@ export class AlarmService {
       degraded: collectors.total === 0 || collectors.online < collectors.total || devices.online < devices.total,
       checkedAt: new Date().toISOString(),
     };
+  }
+
+  /** For external monitoring: counts only, never names. A database failure reports "down" instead of throwing. */
+  async monitoringStatus(): Promise<MonitoringStatus> {
+    const checkedAt = new Date().toISOString();
+    try {
+      const sys = await this.systemStatus();
+      const { rows } = await this.db.query<{ unacked_fire: number; stale: number; failed: number; age: number | null }>(
+        `SELECT (SELECT count(*) FROM alarm a WHERE a.category = 'fire' AND a.acked_at IS NULL AND ${ACTIVE_SQL})::int AS unacked_fire,
+                -- Due for over a minute but not delivered (deferred retries/grouping have a future next_attempt_at).
+                (SELECT count(*) FROM notification
+                  WHERE (status = 'pending' AND next_attempt_at < now() - interval '60 seconds')
+                     OR (status = 'sending' AND claimed_at < now() - interval '2 minutes'))::int AS stale,
+                (SELECT count(*) FROM notification WHERE status = 'failed' AND created_at > now() - interval '1 hour')::int AS failed,
+                (SELECT extract(epoch FROM now() - max(last_seen_at))::int FROM collector WHERE active) AS age`,
+      );
+      const r = rows[0]!;
+      const degraded = sys.degraded || r.stale > 0 || r.failed > 0;
+      return {
+        status: degraded ? 'degraded' : 'ok',
+        checkedAt,
+        db: 'ok',
+        collectors: sys.collectors,
+        devices: sys.devices,
+        unackedFire: r.unacked_fire,
+        notifications: { stalePending: r.stale, failedLastHour: r.failed },
+        lastIngestAgeSeconds: r.age,
+      };
+    } catch {
+      return { status: 'down', checkedAt, db: 'error', collectors: { total: 0, online: 0 }, devices: { total: 0, online: 0 }, unackedFire: 0, notifications: { stalePending: 0, failedLastHour: 0 }, lastIngestAgeSeconds: null };
+    }
   }
 }

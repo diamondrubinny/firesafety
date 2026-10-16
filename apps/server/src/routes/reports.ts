@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { CATEGORY_LABELS_HE, reportQuerySchema, type PointCategory } from '@firesafety/shared';
+import { CATEGORY_LABELS_HE, pilotQuerySchema, reportQuerySchema, type PointCategory } from '@firesafety/shared';
 import { requireRole, requireUser } from '../auth/guards.js';
 import { toCsv } from '../lib/csv-export.js';
 import { parse } from '../lib/errors.js';
@@ -37,6 +37,9 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     );
     return sendCsv(reply, `alarms-${q.from}-${q.to}.csv`, csv);
   });
+
+  // System-wide metrics across all buildings: administrators only.
+  app.get('/reports/pilot', { preHandler: requireRole('FireAdmin') }, async (req) => services.pilotMetrics.report(parse(pilotQuerySchema, req.query)));
 
   app.get('/reports/open-issues', async (req) => services.reports.openIssues(scopeFor(requireUser(req))));
 

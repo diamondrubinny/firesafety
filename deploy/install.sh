@@ -59,6 +59,7 @@ alnum() { openssl rand -hex "$1"; } # hex: safe inside URLs and SQL literals
 PG_SUPER="$(alnum 24)"; PG_OWNER="$(alnum 24)"; PG_APP="$(alnum 24)"
 PEPPER="$(openssl rand -base64 48 | tr -d '\n')"
 ENC_KEY="$(openssl rand -base64 32 | tr -d '\n')"
+MON_TOKEN="$(alnum 24)"
 
 # ---- write .env (0600, atomically) ---------------------------------------------------
 umask 077
@@ -79,6 +80,7 @@ set_kv FS_APP_PASSWORD "$PG_APP"
 set_kv DATABASE_URL "postgres://fs_app:$PG_APP@db:5432/firesafety"
 set_kv AUDIT_IP_PEPPER "$PEPPER"
 set_kv SETTINGS_ENCRYPTION_KEY "$ENC_KEY"
+set_kv MONITORING_TOKEN "$MON_TOKEN"
 set_kv INGEST_ALLOWED_CIDRS "$FS_INGEST_CIDRS"
 set_kv BREAK_GLASS_ALLOWED_CIDRS "$FS_BREAK_GLASS_CIDRS"
 set_kv BREAK_GLASS_ENABLED false
@@ -88,7 +90,7 @@ if [[ -n "$FS_OIDC_TENANT_ID" ]]; then
 fi
 [[ -n "$FS_OIDC_CLIENT_ID" ]] && set_kv OIDC_CLIENT_ID "$FS_OIDC_CLIENT_ID"
 [[ -n "$FS_OIDC_CLIENT_SECRET" ]] && set_kv OIDC_CLIENT_SECRET "$FS_OIDC_CLIENT_SECRET"
-unset PG_SUPER PG_OWNER PG_APP PEPPER ENC_KEY FS_OIDC_CLIENT_SECRET
+unset PG_SUPER PG_OWNER PG_APP PEPPER ENC_KEY MON_TOKEN FS_OIDC_CLIENT_SECRET
 
 grep -q 'change-me\|changeMe' "$TMP" && LEFT=1 || LEFT=0
 chmod 600 "$TMP"
@@ -112,6 +114,8 @@ $( [[ "$LEFT" == 1 ]] && echo "2. Fill in the remaining placeholders in .env (En
      docker compose -f deploy/docker-compose.yml --env-file .env build
      docker compose -f deploy/docker-compose.yml --env-file .env up -d
 5. Check:  curl -fsS https://$FS_SITE_ADDRESS/healthz   and sign in with an Entra account that has the FireAdmin role.
-6. Optional (after approval): emergency accounts, see docs/10-user-guide.md, "Break-glass".
+6. Uptime monitoring: point your monitor at https://$FS_SITE_ADDRESS/monitoring/v1/status with the header
+   "Authorization: Bearer <MONITORING_TOKEN from .env>" (200 = ok, 503 = degraded). Restrict MONITORING_ALLOWED_CIDRS.
+7. Optional (after approval): emergency accounts, see docs/10-user-guide.md, "Break-glass".
 NEXT
 [[ -f "$CERT_DIR/cert.pem" && -f "$CERT_DIR/key.pem" ]] || warn "TLS certificate not found yet in $CERT_DIR"

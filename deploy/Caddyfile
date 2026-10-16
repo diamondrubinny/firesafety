@@ -31,10 +31,17 @@
 		not remote_ip {$BREAK_GLASS_ALLOWED_CIDRS}
 	}
 
-	@backend path /api/* /auth/* /ingest/* /healthz
+	# External uptime monitoring (bearer token in the server) only from the monitoring network.
+	@monitoringDenied {
+		path /monitoring/*
+		not remote_ip {$MONITORING_ALLOWED_CIDRS}
+	}
+
+	@backend path /api/* /auth/* /ingest/* /monitoring/* /healthz
 	handle @backend {
 		respond @ingestDenied 403
 		respond @breakGlassDenied 403
+		respond @monitoringDenied 403
 		reverse_proxy server:3000
 	}
 

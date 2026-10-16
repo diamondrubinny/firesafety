@@ -76,6 +76,7 @@ services:
       # Source networks allowed to reach /ingest/* (the collector host). Narrow this to the collector's address.
       INGEST_ALLOWED_CIDRS: ${INGEST_ALLOWED_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
       BREAK_GLASS_ALLOWED_CIDRS: ${BREAK_GLASS_ALLOWED_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
+      MONITORING_ALLOWED_CIDRS: ${MONITORING_ALLOWED_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
     ports:
       - "443:443"
     volumes:

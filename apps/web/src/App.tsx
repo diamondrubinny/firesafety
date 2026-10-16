@@ -10,6 +10,7 @@ import { BuildingDetailPage } from './pages/BuildingDetailPage';
 import { AdminBuildingsPage } from './pages/AdminBuildingsPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AuditPage } from './pages/AuditPage';
+import { PilotReportPage } from './pages/PilotReportPage';
 import { AccessibilityPage, NotFoundPage, PrivacyPage, TermsPage } from './pages/StaticPages';
 import { AlarmsPage } from './pages/AlarmsPage';
 import { AlarmDetailPage } from './pages/AlarmDetailPage';
@@ -58,6 +59,7 @@ export function App() {
         <Route path="/admin/buildings" element={<RequireAuth roles={['FireAdmin']}><AdminBuildingsPage /></RequireAuth>} />
         <Route path="/admin/users" element={<RequireAuth roles={['FireAdmin']}><AdminUsersPage /></RequireAuth>} />
         <Route path="/admin/audit" element={<RequireAuth roles={['FireAdmin']}><AuditPage /></RequireAuth>} />
+        <Route path="/admin/pilot" element={<RequireAuth roles={['FireAdmin']}><PilotReportPage /></RequireAuth>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

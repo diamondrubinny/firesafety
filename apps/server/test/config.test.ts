@@ -8,6 +8,11 @@ const base = {
 };
 
 describe('config', () => {
+  it('treats an empty MONITORING_TOKEN (as in .env.example) as disabled, rejects a short one', () => {
+    expect(loadConfig({ ...base, AUTH_MODE: 'dev', MONITORING_TOKEN: '' }).MONITORING_TOKEN).toBeUndefined();
+    expect(() => loadConfig({ ...base, AUTH_MODE: 'dev', MONITORING_TOKEN: 'short' })).toThrow(/MONITORING_TOKEN/);
+  });
+
   it('rejects dev auth mode in production', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', AUTH_MODE: 'dev' })).toThrow(/AUTH_MODE=dev is forbidden/);
   });

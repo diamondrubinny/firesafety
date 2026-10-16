@@ -18,6 +18,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [08 — Production pack: threat model, data map, checklist, pilot runbook](docs/08-production-pack.md)
 - [09 — Operational readiness: Docker verification, break-glass, key rotation](docs/09-phase-ops-plan.md)
 - [10 — User & operations guide](docs/10-user-guide.md)
+- [11 — Pilot tooling: performance report, external monitoring](docs/11-phase9-pilot-tooling.md)
 
 ## Confidentiality rule for this repository
 

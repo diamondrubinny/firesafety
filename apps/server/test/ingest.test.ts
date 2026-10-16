@@ -18,6 +18,7 @@ function batch(partial: Partial<IngestBatch> = {}): IngestBatch {
     points: [],
     events: [],
     snapshots: [],
+    inventorySeqs: [],
     ...partial,
   };
 }
@@ -186,6 +187,20 @@ describe('alarm lifecycle', () => {
     expect(res.json()).toEqual({ ackedSeq: 1 });
     // point 9 active; point 7 cleared but latched (unacknowledged fire)
     expect((await activeAlarms()).map((a) => a.latched).sort()).toEqual([false, true]);
+  });
+
+  it('communication alarms start at the last successful contact, not at detection time', async () => {
+    await send(batch({ devices: [{ instance: 1001, address: '10.0.0.5', online: true }] }));
+    await ctx.db.query("UPDATE bacnet_device SET last_seen_at = now() - interval '3 minutes'");
+    await send(batch({ devices: [{ instance: 1001, address: '10.0.0.5', online: false, error: 'timeout' }] }));
+    await ctx.db.query("UPDATE collector SET last_seen_at = now() - interval '5 minutes'");
+    await ctx.app.runJobs();
+    const { rows } = await ctx.db.query(
+      `SELECT kind, round(extract(epoch FROM now() - raised_at))::int AS age FROM alarm WHERE kind <> 'point' ORDER BY kind`,
+    );
+    expect(rows.map((r) => r.kind)).toEqual(['collector_comm', 'device_comm']);
+    expect(Math.abs(rows[0].age - 300)).toBeLessThanOrEqual(2);
+    expect(Math.abs(rows[1].age - 180)).toBeLessThanOrEqual(2);
   });
 
   it('raises and clears a device communication alarm', async () => {

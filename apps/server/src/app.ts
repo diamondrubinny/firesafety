@@ -40,6 +40,8 @@ import { floorRoutes } from './routes/floors.js';
 import { adminNotificationRoutes, myNotificationRoutes } from './routes/notifications.js';
 import { adminProcedureRoutes, alarmProcedureRoutes } from './routes/procedures.js';
 import { reportRoutes } from './routes/reports.js';
+import { monitoringRoutes } from './routes/monitoring.js';
+import { PilotMetricsService } from './services/pilot-metrics.js';
 
 export interface Services {
   audit: AuditService;
@@ -58,6 +60,7 @@ export interface Services {
   procedures: ProcedureService;
   reports: ReportService;
   breakGlass: BreakGlassService;
+  pilotMetrics: PilotMetricsService;
 }
 
 declare module 'fastify' {
@@ -150,6 +153,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     procedures: new ProcedureService(db),
     reports: new ReportService(db),
     breakGlass: new BreakGlassService(db, box),
+    pilotMetrics: new PilotMetricsService(db),
   });
   app.decorate('runRetention', () =>
     purgeExpired(db, {
@@ -231,7 +235,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   // Session resolution (onRequest so it is available to preValidation, e.g. the WebSocket upgrade).
   // Absence of a valid session is not an error here; guards decide.
   app.addHook('onRequest', async (req) => {
-    if (req.url.startsWith('/ingest/')) return;
+    if (req.url.startsWith('/ingest/') || req.url.startsWith('/monitoring/')) return;
     const token = req.cookies[app.cookieNames.session];
     if (token) req.user = await app.services.sessions.resolve(token);
   });
@@ -268,6 +272,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(adminProcedureRoutes, { prefix: '/api/admin' });
   await app.register(reportRoutes, { prefix: '/api' });
   await app.register(ingestRoutes);
+  await app.register(monitoringRoutes);
 
   if (opts.backgroundJobs ?? true) {
     const jobs = setInterval(() => {

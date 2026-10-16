@@ -27,6 +27,7 @@ export function Layout() {
                 <li><NavLink to="/admin/procedures">נהלים</NavLink></li>
                 <li><NavLink to="/admin/settings/notifications">הגדרות התראות</NavLink></li>
                 <li><NavLink to="/admin/audit">יומן פעולות</NavLink></li>
+                <li><NavLink to="/admin/pilot">ביצועי מערכת</NavLink></li>
               </>
             )}
           </ul>

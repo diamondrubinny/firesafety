@@ -207,6 +207,8 @@ class Collector:
             "points": points,
             "events": events,
             "snapshots": snapshots,
+            # Inventory items share the outbox sequence; telling the server lets it verify completeness.
+            "inventorySeqs": points_seqs,
         }
         return batch, points_seqs, max_seq
 

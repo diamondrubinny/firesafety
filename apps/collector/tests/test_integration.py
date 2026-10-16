@@ -127,7 +127,11 @@ def test_inventory_reports_points_and_disabled(tmp_path):
             await col.poll_panel(p)
             assert len(events(col)) == 1
             await col.flush()
-            assert uplink.batches[-1]["points"] and col.outbox.depth() == 0
+            b = uplink.batches[-1]
+            assert b["points"] and col.outbox.depth() == 0
+            # Completeness invariant: events + snapshots + inventory cover the outbox sequence without gaps.
+            seqs = sorted([e["seq"] for e in b["events"]] + [s["seq"] for s in b["snapshots"]] + b["inventorySeqs"])
+            assert b["inventorySeqs"] and seqs == list(range(seqs[0], seqs[-1] + 1))
         finally:
             panel.close()
             app.close()
