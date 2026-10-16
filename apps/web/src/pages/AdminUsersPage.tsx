@@ -84,6 +84,7 @@ function UserScopeEditor({ user, buildings }: { user: AdminUser; buildings: Buil
     <li className="card">
       <h2 className="h3">
         {user.displayName} <span className="muted" dir="ltr">{user.email}</span>
+        {user.breakGlass && <> <span className="badge badge-denied">חשבון חירום</span></>}
       </h2>
       <p>
         תפקידים: {user.roles.map((r) => ROLE_LABELS_HE[r]).join(', ') || '—'}

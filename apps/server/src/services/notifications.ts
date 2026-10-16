@@ -62,6 +62,20 @@ const ALARM_INFO_SQL = `
  *   escalate() unacknowledged fire alarms → escalation rows
  *   process()  claims due rows, groups them per (user, channel), sends, retries with backoff
  */
+/** Why a user cannot receive on a channel right now (null = deliverable). */
+function missingPrerequisite(ch: Channel, contact: { email: string; phone: string | null; whatsappOptIn: boolean }, pushCount: number): string | null {
+  switch (ch) {
+    case 'push':
+      return pushCount === 0 ? 'אין מכשיר רשום ל-Push' : null;
+    case 'email':
+      return contact.email ? null : 'אין כתובת דוא"ל';
+    case 'sms':
+      return contact.phone ? null : 'לא הוגדר מספר טלפון';
+    case 'whatsapp':
+      return !contact.phone ? 'לא הוגדר מספר טלפון' : !contact.whatsappOptIn ? 'המשתמש לא אישר קבלת WhatsApp' : null;
+  }
+}
+
 export class NotificationService {
   constructor(
     private readonly db: Db,
@@ -109,7 +123,7 @@ export class NotificationService {
   private async recipients(c: pg.PoolClient, a: AlarmInfo): Promise<string[]> {
     const { rows } = await c.query<{ id: string }>(
       `SELECT u.id FROM app_user u
-        WHERE u.active AND (
+        WHERE u.active AND NOT EXISTS (SELECT 1 FROM break_glass_account b WHERE b.user_id = u.id) AND (
           'FireAdmin' = ANY(u.roles)
           OR ($1::text = 'point' AND 'SafetyOfficer' = ANY(u.roles)
               AND EXISTS (SELECT 1 FROM user_building_scope s WHERE s.user_id = u.id AND s.building_id = $2)))`,
@@ -133,13 +147,7 @@ export class NotificationService {
         : 0;
       for (const ch of channels) {
         if (!contact.channels.includes(ch)) continue; // user opted out of this channel
-        const missing =
-          ch === 'push' ? (pushCount === 0 ? 'אין מכשיר רשום ל-Push' : null)
-          : ch === 'email' ? (contact.email ? null : 'אין כתובת דוא"ל')
-          : ch === 'sms' ? (contact.phone ? null : 'לא הוגדר מספר טלפון')
-          : !contact.phone ? 'לא הוגדר מספר טלפון'
-          : !contact.whatsappOptIn ? 'המשתמש לא אישר קבלת WhatsApp'
-          : null;
+        const missing = missingPrerequisite(ch, contact, pushCount);
         const r = await c.query(
           `INSERT INTO notification (alarm_id, user_id, channel, stage, status, last_error)
            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
@@ -343,6 +351,38 @@ export class NotificationService {
     }
     await sendWhatsApp(s.whatsapp, secrets.whatsappAccessToken, to, msg.text, msg.url, this.opts.whatsappBase);
     return maskPhone(to);
+  }
+
+  /**
+   * Security alert to every active FireAdmin (never break-glass accounts) on each channel they receive.
+   * Bypasses the alarm outbox: it is not tied to an alarm and must not wait for the grouping window.
+   */
+  async notifyAdmins(title: string, text: string): Promise<{ sent: number; failed: number }> {
+    const resolved = await this.settings.get();
+    if (!resolved.settings.enabled) return { sent: 0, failed: 0 };
+    const { rows } = await this.db.query<{ id: string }>(
+      `SELECT u.id FROM app_user u
+        WHERE u.active AND 'FireAdmin' = ANY(u.roles)
+          AND NOT EXISTS (SELECT 1 FROM break_glass_account b WHERE b.user_id = u.id)`,
+    );
+    const msg: OutboundMessage = { title, text, url: `${this.opts.publicOrigin}/admin/audit`, urgent: true };
+    let sent = 0;
+    let failed = 0;
+    for (const { id } of rows) {
+      const contact = await this.contacts.get(id);
+      const pushCount = (await this.contacts.pushSubscriptions(id)).length;
+      for (const ch of contact.channels) {
+        if (!resolved.settings[ch].enabled || missingPrerequisite(ch, contact, pushCount)) continue;
+        try {
+          await this.deliver(resolved, id, ch, msg);
+          sent++;
+        } catch (err) {
+          failed++;
+          this.log.warn({ channel: ch, reason: err instanceof ProviderError ? err.message : 'error' }, 'security alert delivery failed');
+        }
+      }
+    }
+    return { sent, failed };
   }
 
   /** Delivers a phone-verification code by SMS, or WhatsApp when SMS is not configured. */

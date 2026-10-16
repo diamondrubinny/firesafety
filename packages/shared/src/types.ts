@@ -6,6 +6,8 @@ export interface Me {
   displayName: string;
   roles: Role[];
   globalScope: boolean;
+  /** Session opened with an emergency (break-glass) account. */
+  breakGlass: boolean;
 }
 
 export interface Faculty {
@@ -30,6 +32,7 @@ export interface AdminUser {
   active: boolean;
   lastLoginAt: string | null;
   buildingIds: string[];
+  breakGlass: boolean;
 }
 
 export interface AuditEntry {

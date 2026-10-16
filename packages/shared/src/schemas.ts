@@ -48,6 +48,18 @@ export const devLoginSchema = z.object({
 });
 export type DevLoginInput = z.infer<typeof devLoginSchema>;
 
+export const breakGlassLoginSchema = z.object({
+  username: z.string().trim().min(1).max(64),
+  password: z.string().min(1).max(128),
+  code: z.string().trim().regex(/^\d{6}$/, 'code must be 6 digits'),
+});
+export type BreakGlassLoginInput = z.infer<typeof breakGlassLoginSchema>;
+
+export interface AuthModeInfo {
+  mode: 'oidc' | 'dev';
+  breakGlass: boolean;
+}
+
 export const collectorInputSchema = z.object({ name: trimmed(1, 80) });
 
 export const alarmListQuerySchema = z.object({

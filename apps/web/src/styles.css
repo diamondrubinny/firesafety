@@ -232,3 +232,10 @@ textarea { font: inherit; padding: 0.5rem; border: 1px solid var(--border); bord
   .table tr { break-inside: avoid; }
   a { color: #000; text-decoration: none; }
 }
+
+/* Break-glass: emergency login (collapsed) and the permanent session banner */
+.break-glass-login { margin-block-start: 2rem; text-align: start; }
+.break-glass-login summary { cursor: pointer; font-weight: 600; }
+.break-glass-login form { display: grid; gap: 0.5rem; margin-block-start: 0.75rem; }
+.break-glass-banner { background: var(--danger); color: var(--danger-text); padding: 0.75rem 1.5rem; border-block-end: 4px solid currentColor; }
+@media print { .break-glass-banner { display: none !important; } }

@@ -25,6 +25,7 @@ import { NotificationService } from './services/notifications.js';
 import { DEV_ONLY_KEY, SecretBox } from './lib/secretbox.js';
 import { ProcedureService } from './services/procedures.js';
 import { ReportService } from './services/reports.js';
+import { BreakGlassService } from './services/break-glass.js';
 import { purgeExpired } from './services/retention.js';
 import { EntraOidcProvider, type OidcProvider } from './auth/oidc.js';
 import { authRoutes } from './routes/auth.js';
@@ -56,6 +57,7 @@ export interface Services {
   notifications: NotificationService;
   procedures: ProcedureService;
   reports: ReportService;
+  breakGlass: BreakGlassService;
 }
 
 declare module 'fastify' {
@@ -146,6 +148,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     ),
     procedures: new ProcedureService(db),
     reports: new ReportService(db),
+    breakGlass: new BreakGlassService(db, box),
   });
   app.decorate('runRetention', () =>
     purgeExpired(db, {

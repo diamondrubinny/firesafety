@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { devLoginSchema } from '@firesafety/shared';
+import { breakGlassLoginSchema, devLoginSchema, type AuthModeInfo } from '@firesafety/shared';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { notFound, parse } from '../lib/errors.js';
 import { IdentityRejectedError } from '../auth/oidc.js';
@@ -19,9 +19,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   const authRateLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } };
   const cookieBase = { path: '/', httpOnly: true, secure: config.COOKIE_SECURE, sameSite: 'lax' as const };
 
-  async function startSession(reply: FastifyReply, user: AuthUser) {
-    const token = await services.sessions.create(user.id);
-    reply.setCookie(cookieNames.session, token, { ...cookieBase, maxAge: config.SESSION_ABSOLUTE_HOURS * 3600 });
+  async function startSession(reply: FastifyReply, user: AuthUser, breakGlass = false) {
+    const hours = breakGlass ? config.BREAK_GLASS_SESSION_HOURS : config.SESSION_ABSOLUTE_HOURS;
+    const token = await services.sessions.create(user.id, { method: breakGlass ? 'break_glass' : 'sso', absoluteHours: hours });
+    reply.setCookie(cookieNames.session, token, { ...cookieBase, maxAge: hours * 3600 });
   }
 
   app.get('/auth/login', { config: authRateLimit }, async (req, reply) => {
@@ -86,7 +87,42 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
-  app.get('/auth/mode', async () => ({ mode: config.AUTH_MODE }));
+  app.get('/auth/mode', async (): Promise<AuthModeInfo> => ({ mode: config.AUTH_MODE, breakGlass: config.BREAK_GLASS_ENABLED }));
+
+  if (config.BREAK_GLASS_ENABLED) {
+    app.log.warn('BREAK_GLASS_ENABLED: emergency local login is available');
+    const israelTime = () => new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' }).format(new Date());
+    // Best effort and non-blocking: an emergency login must never wait on SMTP/SMS. The outcome is audited.
+    const alertAdmins = (title: string, text: string, userId: string | null) => {
+      services.notifications
+        .notifyAdmins(title, text)
+        .then((r) => services.audit.write({ userId, action: 'security.alert', outcome: r.sent > 0 ? 'success' : 'failure', details: { kind: 'break_glass', ...r } }))
+        .catch((err: unknown) => app.log.error({ err }, 'break-glass security alert failed'));
+    };
+
+    app.post('/auth/break-glass', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
+      const input = parse(breakGlassLoginSchema, req.body);
+      const r = await services.breakGlass.authenticate(input.username, input.password, input.code);
+      if (!r.ok) {
+        const rec = { userId: r.userId ?? null, action: 'auth.break_glass', outcome: 'denied' as const, ipHash: req.ipHash, details: { reason: r.reason, ...(r.lockedNow ? { lockedNow: true } : {}) } };
+        // Unknown names are attacker-controlled: throttle them. Real accounts are bounded by the lockout.
+        if (r.reason === 'unknown_user') await services.audit.writeThrottled(`auth.break_glass:${req.ipHash}`, rec);
+        else await services.audit.write(rec);
+        if (r.lockedNow) {
+          alertAdmins('חשבון חירום ננעל', `חשבון כניסת חירום ננעל אחרי ניסיונות כושלים חוזרים (${israelTime()}). ייתכן ניסיון פריצה. יש לבדוק ביומן הביקורת.`, r.userId ?? null);
+        }
+        return reply.status(401).send({ error: 'invalid_credentials', message: 'Invalid credentials' });
+      }
+      await startSession(reply, r.user, true);
+      await services.audit.write({ userId: r.user.id, action: 'auth.login', outcome: 'success', ipHash: req.ipHash, details: { method: 'break_glass', roles: r.user.roles } });
+      alertAdmins(
+        'בוצעה כניסת חירום',
+        `בוצעה כניסת חירום (Break-glass) למערכת ניטור האש בחשבון "${r.user.displayName}" (${israelTime()}). אם הכניסה לא הייתה צפויה, יש להשבית את החשבון מיד.`,
+        r.user.id,
+      );
+      return reply.status(204).send();
+    });
+  }
 
   // Development-only login. Double-guarded: config validation forbids AUTH_MODE=dev in production.
   if (config.AUTH_MODE === 'dev' && config.NODE_ENV !== 'production') {

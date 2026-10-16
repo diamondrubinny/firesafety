@@ -2,6 +2,8 @@ import type { Db } from '../db/pool.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { type AuthUser, toAuthUser } from './users.js';
 
+export type SessionMethod = 'sso' | 'break_glass';
+
 export interface SessionOptions {
   idleMinutes: number;
   absoluteHours: number;
@@ -14,12 +16,12 @@ export class SessionService {
   ) {}
 
   /** Returns the raw token for the cookie; only its hash is persisted. */
-  async create(userId: string): Promise<string> {
+  async create(userId: string, opts: { method?: SessionMethod; absoluteHours?: number } = {}): Promise<string> {
     const token = randomToken();
     await this.db.query(
-      `INSERT INTO user_session (token_hash, user_id, expires_at)
-       VALUES ($1, $2, now() + make_interval(hours => $3))`,
-      [sha256(token), userId, this.opts.absoluteHours],
+      `INSERT INTO user_session (token_hash, user_id, expires_at, method)
+       VALUES ($1, $2, now() + make_interval(hours => $3), $4)`,
+      [sha256(token), userId, opts.absoluteHours ?? this.opts.absoluteHours, opts.method ?? 'sso'],
     );
     return token;
   }
@@ -33,7 +35,7 @@ export class SessionService {
         WHERE s.token_hash = $1 AND u.id = s.user_id AND u.active
           AND s.expires_at > now()
           AND s.last_seen_at > now() - make_interval(mins => $2)
-        RETURNING u.id, u.email, u.display_name, u.roles, u.active`,
+        RETURNING u.id, u.email, u.display_name, u.roles, u.active, s.method`,
       [hash, this.opts.idleMinutes],
     );
     return rows[0] ? toAuthUser(rows[0]) : null;
@@ -42,7 +44,7 @@ export class SessionService {
   /** Read-only validity check (does not extend the idle timeout). Used by background re-validation. */
   async check(token: string): Promise<AuthUser | null> {
     const { rows } = await this.db.query(
-      `SELECT u.id, u.email, u.display_name, u.roles, u.active
+      `SELECT u.id, u.email, u.display_name, u.roles, u.active, s.method
          FROM user_session s JOIN app_user u ON u.id = s.user_id
         WHERE s.token_hash = $1 AND u.active AND s.expires_at > now()
           AND s.last_seen_at > now() - make_interval(mins => $2)`,

@@ -25,9 +25,16 @@
 		not remote_ip {$INGEST_ALLOWED_CIDRS}
 	}
 
+	# Emergency (break-glass) login only from internal networks, even when enabled in the server.
+	@breakGlassDenied {
+		path /auth/break-glass
+		not remote_ip {$BREAK_GLASS_ALLOWED_CIDRS}
+	}
+
 	@backend path /api/* /auth/* /ingest/* /healthz
 	handle @backend {
 		respond @ingestDenied 403
+		respond @breakGlassDenied 403
 		reverse_proxy server:3000
 	}
 

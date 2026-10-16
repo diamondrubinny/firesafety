@@ -47,6 +47,12 @@ export function Layout() {
       <div className="disclaimer" role="note">
         מערכת משלימה לניטור בלבד. היא אינה מחליפה את רכזות האש, את לוחות ההפעלה, את המוקד ואת נהלי החירום.
       </div>
+      {me?.breakGlass && (
+        <div className="break-glass-banner" role="note">
+          <strong>מחובר בכניסת חירום.</strong> החיבור מוגבל בזמן, כל פעולה מתועדת ומנהלי המערכת קיבלו התראה.
+          לאחר האירוע יש לחדש את פרטי הכניסה (reset).
+        </div>
+      )}
       {me && <SystemBanner />}
       <main id="main" tabIndex={-1}>
         <Outlet />

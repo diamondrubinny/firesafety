@@ -10,6 +10,8 @@ export interface AuthUser {
   displayName: string;
   roles: Role[];
   active: boolean;
+  /** True when the current session was opened with a break-glass account. */
+  breakGlass?: boolean;
 }
 
 interface UserRow {
@@ -18,6 +20,7 @@ interface UserRow {
   display_name: string;
   roles: string[];
   active: boolean;
+  method?: string;
 }
 
 export function toAuthUser(r: UserRow): AuthUser {
@@ -27,6 +30,7 @@ export function toAuthUser(r: UserRow): AuthUser {
     displayName: r.display_name,
     roles: r.roles.filter(isRole),
     active: r.active,
+    breakGlass: r.method === 'break_glass',
   };
 }
 
@@ -64,6 +68,7 @@ export class UserService {
     const [items, total] = await Promise.all([
       this.db.query(
         `SELECT u.id, u.email, u.display_name, u.roles, u.active, u.last_login_at,
+                EXISTS (SELECT 1 FROM break_glass_account b WHERE b.user_id = u.id) AS break_glass,
                 COALESCE(array_agg(s.building_id::text) FILTER (WHERE s.building_id IS NOT NULL), '{}') AS building_ids
            FROM app_user u LEFT JOIN user_building_scope s ON s.user_id = u.id
           GROUP BY u.id
@@ -82,6 +87,7 @@ export class UserService {
         active: r.active,
         lastLoginAt: r.last_login_at ? (r.last_login_at as Date).toISOString() : null,
         buildingIds: r.building_ids,
+        breakGlass: r.break_glass,
       })),
       total: Number(total.rows[0]?.count ?? 0),
     };

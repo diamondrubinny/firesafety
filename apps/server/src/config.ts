@@ -34,6 +34,10 @@ const envSchema = z
     /** Require the "mfa" value in the "amr" claim. Requires verification against the tenant's token configuration. */
     OIDC_REQUIRE_MFA: bool.default(false),
 
+    /** Emergency local login (username + password + TOTP) for when Entra ID is unavailable. Accounts are created by CLI only. */
+    BREAK_GLASS_ENABLED: bool.default(false),
+    BREAK_GLASS_SESSION_HOURS: z.coerce.number().int().min(1).max(4).default(2),
+
     /** A collector silent for longer than this raises a communication alarm. */
     COLLECTOR_STALE_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
 
