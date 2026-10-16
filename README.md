@@ -16,6 +16,8 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [06 — Phase 4 plan](docs/06-phase4-plan.md)
 - [07 — Phase 5 plan](docs/07-phase5-plan.md)
 - [08 — Production pack: threat model, data map, checklist, pilot runbook](docs/08-production-pack.md)
+- [09 — Operational readiness: Docker verification, break-glass, key rotation](docs/09-phase-ops-plan.md)
+- [10 — User & operations guide](docs/10-user-guide.md)
 
 ## Confidentiality rule for this repository
 

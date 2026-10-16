@@ -22,7 +22,7 @@ import { ClamdScanner, NoopScanner, type FileScanner } from './services/scanner.
 import { SettingsService } from './services/settings.js';
 import { ContactService } from './services/contacts.js';
 import { NotificationService } from './services/notifications.js';
-import { DEV_ONLY_KEY, SecretBox } from './lib/secretbox.js';
+import { createSecretBox } from './lib/secretbox.js';
 import { ProcedureService } from './services/procedures.js';
 import { ReportService } from './services/reports.js';
 import { BreakGlassService } from './services/break-glass.js';
@@ -108,7 +108,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.decorate('config', config);
   app.decorate('db', db);
   if (!config.SETTINGS_ENCRYPTION_KEY) app.log.warn('SETTINGS_ENCRYPTION_KEY not set: using an insecure development key');
-  const box = new SecretBox(config.SETTINGS_ENCRYPTION_KEY ?? DEV_ONLY_KEY);
+  const box = createSecretBox(config);
+  if (config.SETTINGS_ENCRYPTION_KEY_PREVIOUS) app.log.warn('SETTINGS_ENCRYPTION_KEY_PREVIOUS is set: key rotation in progress; run rotate-key, then remove it');
   const settings = new SettingsService(db, box);
   const contacts = new ContactService(db, box, config.AUDIT_IP_PEPPER);
   app.decorate('services', {

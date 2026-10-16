@@ -88,7 +88,7 @@
 
 | סוד | איפה | גיבוי | החלפה |
 |---|---|---|---|
-| `SETTINGS_ENCRYPTION_KEY` | Secret manager או קובץ env בהרשאות 600 | **חובה, בנפרד מגיבוי ה-DB** | כרגע ידנית: החלפת המפתח מחייבת להזין מחדש את סודות הספקים ואת מספרי הטלפון. Re-encryption אוטומטי: שיפור עתידי |
+| `SETTINGS_ENCRYPTION_KEY` | Secret manager או קובץ env בהרשאות 600 | **חובה, בנפרד מגיבוי ה-DB** | ללא השבתה: Keyring (`SETTINGS_ENCRYPTION_KEY_PREVIOUS`) ו-CLI `rotate-key` (ראו docs/10, סעיף 11). שומרים את המפתח הישן כל עוד שמורים גיבויים מלפני ההחלפה |
 | `AUDIT_IP_PEPPER` | כנ"ל | רצוי | שינוי שובר את ההשוואה בין IP-hash ישנים לחדשים |
 | `OIDC_CLIENT_SECRET` | כנ"ל | — | לפי מדיניות Entra (רצוי Certificate) |
 | סיסמאות DB (`fs_owner`, `fs_app`) | כנ"ל | — | `ALTER ROLE … PASSWORD` |

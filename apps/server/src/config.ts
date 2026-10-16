@@ -49,6 +49,8 @@ const envSchema = z
 
     /** 32 random bytes, base64. Encrypts provider secrets and phone numbers at rest. */
     SETTINGS_ENCRYPTION_KEY: z.string().optional(),
+    /** During key rotation only: the old key(s), comma-separated, accepted for decryption. Remove after rotate-key. */
+    SETTINGS_ENCRYPTION_KEY_PREVIOUS: z.string().optional(),
     /** Push endpoints the server may POST to (SSRF protection). Comma-separated host suffixes. */
     PUSH_ENDPOINT_ALLOWLIST: z
       .string()
@@ -70,6 +72,18 @@ const envSchema = z
   .superRefine((env, ctx) => {
     if (env.SETTINGS_ENCRYPTION_KEY && Buffer.from(env.SETTINGS_ENCRYPTION_KEY, 'base64').length !== 32) {
       ctx.addIssue({ code: 'custom', path: ['SETTINGS_ENCRYPTION_KEY'], message: 'SETTINGS_ENCRYPTION_KEY must be 32 bytes, base64-encoded' });
+    }
+    if (env.SETTINGS_ENCRYPTION_KEY_PREVIOUS) {
+      const prev = env.SETTINGS_ENCRYPTION_KEY_PREVIOUS.split(',').map((k) => k.trim()).filter(Boolean);
+      if (!env.SETTINGS_ENCRYPTION_KEY) {
+        ctx.addIssue({ code: 'custom', path: ['SETTINGS_ENCRYPTION_KEY_PREVIOUS'], message: 'requires SETTINGS_ENCRYPTION_KEY (the new key)' });
+      }
+      if (prev.length > 3 || prev.some((k) => Buffer.from(k, 'base64').length !== 32)) {
+        ctx.addIssue({ code: 'custom', path: ['SETTINGS_ENCRYPTION_KEY_PREVIOUS'], message: 'up to 3 keys, each 32 bytes base64-encoded' });
+      }
+      if (prev.includes(env.SETTINGS_ENCRYPTION_KEY ?? '')) {
+        ctx.addIssue({ code: 'custom', path: ['SETTINGS_ENCRYPTION_KEY_PREVIOUS'], message: 'must differ from SETTINGS_ENCRYPTION_KEY' });
+      }
     }
     if (env.AUTH_MODE === 'oidc') {
       for (const key of ['OIDC_ISSUER', 'OIDC_TENANT_ID', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const) {
