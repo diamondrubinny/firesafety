@@ -145,7 +145,7 @@ Configure in the UI: **הגדרות התראות** (FireAdmin). Users set their 
 
 ```bash
 # once, as a PostgreSQL superuser, on an empty database:
-psql -v owner_pw="'<owner-password>'" -v app_pw="'<app-password>'" -d firesafety -f deploy/sql/least-privilege.sql
+psql -v owner_pw='<owner-password>' -v app_pw='<app-password>' -d firesafety -f deploy/sql/least-privilege.sql
 ```
 Then set `MIGRATION_DATABASE_URL` (role `fs_owner`, runs migrations) and `DATABASE_URL` (role `fs_app`, used by the server). After each migration run the server makes `audit_log` append-only for every non-owner role. Verified: `fs_app` cannot UPDATE/DELETE/TRUNCATE the audit log, cannot TRUNCATE other tables, and cannot create or drop tables.
 

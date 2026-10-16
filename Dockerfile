@@ -3,12 +3,15 @@ ARG NODE_IMAGE=node:22-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
-RUN npm install -g npm@11.21.0
+# Optional: organisation TLS-inspecting proxy CA, passed as a build secret (never stored in a layer):
+#   docker build --secret id=ca,src=/path/to/proxy-ca.pem ...
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci --ignore-scripts
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -f /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca npm_config_cafile=/run/secrets/ca; fi; \
+    npm install -g npm@11.21.0 && npm ci --ignore-scripts
 
 FROM deps AS build
 COPY tsconfig.base.json ./

@@ -4,6 +4,7 @@ name: firesafety-collector
 
 services:
   collector:
+    image: firesafety-collector:local
     build: ../../apps/collector
     restart: unless-stopped
     network_mode: host

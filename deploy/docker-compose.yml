@@ -6,10 +6,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: ${POSTGRES_USER}          # superuser: used only by the init script / DBA
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      FS_OWNER_PASSWORD: ${FS_OWNER_PASSWORD}  # schema owner (migrations)
+      FS_APP_PASSWORD: ${FS_APP_PASSWORD}      # least-privilege role used by the server
     volumes:
       - db-data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+      - ./sql/least-privilege.sql:/fs-sql/least-privilege.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -19,11 +23,16 @@ services:
     # No published ports: the database is reachable only from the server container.
 
   server:
+    image: firesafety-server:local
     build:
       context: ..
       target: server
     restart: unless-stopped
     env_file: ../.env
+    environment:
+      # Passwords must be alphanumeric (install.sh generates hex) so they need no URL-encoding.
+      DATABASE_URL: postgres://fs_app:${FS_APP_PASSWORD}@db:5432/${POSTGRES_DB}
+      MIGRATION_DATABASE_URL: postgres://fs_owner:${FS_OWNER_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
       db:
         condition: service_healthy
@@ -57,6 +66,7 @@ services:
     networks: [scan]
 
   web:
+    image: firesafety-web:local
     build:
       context: ..
       target: web

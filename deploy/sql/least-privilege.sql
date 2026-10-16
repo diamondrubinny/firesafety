@@ -1,12 +1,13 @@
 -- Least-privilege PostgreSQL roles for FireSafety.
 -- Run ONCE as a superuser on an empty database, BEFORE the first server start:
---   psql -v owner_pw="'...'" -v app_pw="'...'" -d firesafety -f least-privilege.sql
+--   psql -v owner_pw='...' -v app_pw='...' -d firesafety -f least-privilege.sql
+-- (Docker Compose runs this automatically on first start via deploy/sql/init/00-roles.sh.)
 -- Then set:
 --   MIGRATION_DATABASE_URL=postgres://fs_owner:<owner_pw>@db:5432/firesafety   (runs migrations, owns the schema)
 --   DATABASE_URL=postgres://fs_app:<app_pw>@db:5432/firesafety                 (used by the running server)
 
-CREATE ROLE fs_owner LOGIN PASSWORD :owner_pw;
-CREATE ROLE fs_app   LOGIN PASSWORD :app_pw;
+CREATE ROLE fs_owner LOGIN PASSWORD :'owner_pw';
+CREATE ROLE fs_app   LOGIN PASSWORD :'app_pw';
 
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 ALTER SCHEMA public OWNER TO fs_owner;
