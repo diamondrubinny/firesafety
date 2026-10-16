@@ -107,7 +107,10 @@ function AlarmTable({ items, canHandle }: { items: AlarmView[]; canHandle: boole
                 )}
               </td>
               <td>{formatDateTime(a.raisedAt)}</td>
-              <td>{a.ackedAt ? <span>אושר{a.ackedBy ? ` ע"י ${a.ackedBy}` : ''}</span> : <strong>לא אושר</strong>}</td>
+              <td>
+                {a.ackedAt ? <span>אושר{a.ackedBy ? ` ע"י ${a.ackedBy}` : ''}</span> : <strong>לא אושר</strong>}
+                {a.latched && <div className="small"><span className="badge badge-neutral">חזר לשגרה ברכזת. ממתין לאישור</span></div>}
+              </td>
               <td>
                 {canHandle && !a.ackedAt && (
                   <button

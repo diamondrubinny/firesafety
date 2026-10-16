@@ -1,5 +1,6 @@
 import {
   ALARM_CATEGORIES,
+  LATCHING_CATEGORIES,
   type AlarmCategory,
   type AlarmDetail,
   type AlarmSummary,
@@ -24,7 +25,7 @@ const FROM = `
   LEFT JOIN app_user u ON u.id = a.acked_by`;
 
 const COLUMNS = `
-  a.id, a.kind, a.category, a.priority, a.message, a.raised_at, a.cleared_at, a.acked_at,
+  a.id, a.kind, a.category, a.priority, a.message, a.raised_at, a.cleared_at, a.acked_at, a.superseded,
   u.display_name AS acked_by_name,
   b.id AS building_id, b.name AS building_name,
   p.id AS point_id,
@@ -48,6 +49,7 @@ interface Row {
   message: string | null;
   raised_at: Date;
   cleared_at: Date | null;
+  superseded: boolean;
   acked_at: Date | null;
   acked_by_name: string | null;
   building_id: string | null;
@@ -59,12 +61,17 @@ interface Row {
   floor_id: string | null;
 }
 
+const LATCHING_SQL = LATCHING_CATEGORIES.map((c) => `'${c}'`).join(', ');
+/** Active = still raised at the panel, or a latching alarm that cleared before anyone acknowledged it. */
+const ACTIVE_SQL = `(a.cleared_at IS NULL OR (a.acked_at IS NULL AND NOT a.superseded AND a.kind = 'point' AND a.category IN (${LATCHING_SQL})))`;
+
 const toView = (r: Row): AlarmView => ({
   id: r.id,
   kind: r.kind,
   category: r.category,
   priority: r.priority,
   active: r.cleared_at === null,
+  latched: r.cleared_at !== null && r.acked_at === null && !r.superseded && r.kind === 'point' && (LATCHING_CATEGORIES as readonly string[]).includes(r.category),
   raisedAt: r.raised_at.toISOString(),
   clearedAt: r.cleared_at?.toISOString() ?? null,
   ackedAt: r.acked_at?.toISOString() ?? null,
@@ -91,7 +98,7 @@ export class AlarmService {
   ): Promise<Page<AlarmView>> {
     const params: unknown[] = [];
     const where = [scopeClause(scope, params)];
-    if (q.state === 'active') where.push('a.cleared_at IS NULL');
+    if (q.state === 'active') where.push(ACTIVE_SQL);
     if (q.category) {
       params.push(q.category);
       where.push(`a.category = $${params.length}`);
@@ -154,7 +161,7 @@ export class AlarmService {
     const params: unknown[] = [];
     const { rows } = await this.db.query<{ category: AlarmCategory; active: string; unacked: string }>(
       `SELECT a.category, count(*) AS active, count(*) FILTER (WHERE a.acked_at IS NULL) AS unacked
-         ${FROM} WHERE a.cleared_at IS NULL AND ${scopeClause(scope, params)} GROUP BY a.category`,
+         ${FROM} WHERE ${ACTIVE_SQL} AND ${scopeClause(scope, params)} GROUP BY a.category`,
       params,
     );
     const out = Object.fromEntries(ALARM_CATEGORIES.map((c) => [c, { active: 0, unacked: 0 }])) as AlarmSummary;

@@ -218,6 +218,8 @@ export class AlarmEngine {
 
     await c.query(`UPDATE alarm SET cleared_at = now() WHERE point_id = $1 AND kind = 'point' AND cleared_at IS NULL`, [pointId]);
     if (category !== 'normal') {
+      // The new occurrence represents the point from now on: older unacknowledged ones stop latching.
+      await c.query(`UPDATE alarm SET superseded = true WHERE point_id = $1 AND kind = 'point' AND acked_at IS NULL AND NOT superseded`, [pointId]);
       await c.query(
         `INSERT INTO alarm (kind, point_id, category, priority, message, raised_at) VALUES ('point', $1, $2, $3, $4, $5)`,
         [pointId, category, CATEGORY_PRIORITY[category], s.message, s.raisedAt],

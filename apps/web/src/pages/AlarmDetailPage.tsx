@@ -55,7 +55,7 @@ export function AlarmDetailPage() {
             <dt>רכזת</dt><dd>{data.deviceName ?? '—'}</dd>
             <dt>הודעה</dt><dd>{data.message ?? '—'}</dd>
             <dt>התחיל</dt><dd>{formatDateTime(data.raisedAt)}</dd>
-            <dt>מצב</dt><dd>{data.active ? 'פעיל' : `הסתיים ${data.clearedAt ? formatDateTime(data.clearedAt) : ''}`}</dd>
+            <dt>מצב</dt><dd>{data.active ? 'פעיל' : `הסתיים ${data.clearedAt ? formatDateTime(data.clearedAt) : ''}`}{data.latched && ' (ממתין לאישור קבלה)'}</dd>
             <dt>אישור קבלה</dt><dd>{data.ackedAt ? `${formatDateTime(data.ackedAt)}${data.ackedBy ? `, ${data.ackedBy}` : ''}` : 'טרם אושר'}</dd>
           </dl>
           {data.floorId && data.pointId && (

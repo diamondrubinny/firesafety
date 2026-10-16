@@ -7,6 +7,12 @@
  * panel's BACnet object documentation (PICS / object list).
  */
 export const ALARM_CATEGORIES = ['fire', 'prealarm', 'fault', 'supervisory', 'disabled', 'test'] as const;
+
+/**
+ * Point alarms in these categories stay in the active list after the panel returns to normal,
+ * until someone acknowledges them (a fire that cleared unseen must not vanish from the screen).
+ */
+export const LATCHING_CATEGORIES = ['fire', 'prealarm'] as const;
 export type AlarmCategory = (typeof ALARM_CATEGORIES)[number];
 export type PointCategory = AlarmCategory | 'normal';
 

@@ -40,7 +40,12 @@ async function send(b: IngestBatch, auth = token) {
 
 async function activeAlarms(cookie = admin) {
   const res = await ctx.app.inject({ method: 'GET', url: '/api/alarms', headers: { cookie } });
-  return res.json().items as { id: string; category: string; kind: string; ackedAt: string | null; buildingId: string | null }[];
+  return res.json().items as { id: string; category: string; kind: string; ackedAt: string | null; buildingId: string | null; active: boolean; latched: boolean }[];
+}
+
+async function ack(id: string) {
+  const r = await ctx.app.inject({ method: 'POST', url: `/api/alarms/${id}/ack`, headers: write(admin), payload: {} });
+  expect(r.statusCode).toBe(200);
 }
 
 beforeEach(async () => {
@@ -125,12 +130,15 @@ describe('alarm lifecycle', () => {
     expect(rows[0].n).toBe(1);
   });
 
-  it('prealarm -> fire opens a new occurrence; normal clears it', async () => {
+  it('prealarm -> fire opens a new occurrence (the prealarm is superseded); normal clears it, unacked fire latches', async () => {
     await send(batch({ events: [ev(1, 7, 'pre-alarm')] }));
     expect((await activeAlarms()).map((a) => a.category)).toEqual(['prealarm']);
     await send(batch({ events: [ev(2, 7, 'alarm')] }));
     expect((await activeAlarms()).map((a) => a.category)).toEqual(['fire']);
     await send(batch({ events: [ev(3, 7, 'quiet')] }));
+    const latched = await activeAlarms();
+    expect(latched.map((a) => [a.category, a.active, a.latched])).toEqual([['fire', false, true]]);
+    await ack(latched[0]!.id);
     expect(await activeAlarms()).toEqual([]);
     const { rows } = await ctx.db.query('SELECT category, cleared_at IS NOT NULL AS cleared FROM alarm ORDER BY raised_at, category');
     expect(rows).toHaveLength(2);
@@ -139,7 +147,30 @@ describe('alarm lifecycle', () => {
 
   it('applies events in seq order even if delivered out of order within a batch', async () => {
     await send(batch({ events: [ev(2, 7, 'quiet'), ev(1, 7, 'alarm')] }));
+    // alarm (seq 1) then quiet (seq 2): cleared at the panel, still latched until acknowledged
+    expect((await activeAlarms()).map((a) => [a.category, a.active, a.latched])).toEqual([['fire', false, true]]);
+  });
+
+  it('latching: only unacknowledged fire/pre-alarm stay; faults and acked alarms leave; repeats show the latest only', async () => {
+    // A fault that clears by itself leaves the list (no latching for faults).
+    await send(batch({ events: [ev(1, 8, 'fault', { eventState: 'fault' }), ev(2, 8, 'quiet')] }));
     expect(await activeAlarms()).toEqual([]);
+    // An acknowledged fire leaves as soon as the panel returns to normal.
+    await send(batch({ events: [ev(3, 7, 'alarm')] }));
+    await ack((await activeAlarms())[0]!.id);
+    await send(batch({ events: [ev(4, 7, 'quiet')] }));
+    expect(await activeAlarms()).toEqual([]);
+    // Unacked fire -> normal -> fire again on the same point: one row (the latest), not two.
+    await send(batch({ events: [ev(5, 9, 'alarm'), ev(6, 9, 'quiet'), ev(7, 9, 'alarm')] }));
+    const list = await activeAlarms();
+    expect(list.map((a) => [a.category, a.active, a.latched])).toEqual([['fire', true, false]]);
+    // Summary counts the latched one too, so the fire tile and sound stay on until acknowledged.
+    await send(batch({ events: [ev(8, 9, 'quiet')] }));
+    const summary = (await ctx.app.inject({ method: 'GET', url: '/api/alarms/summary', headers: { cookie: admin } })).json();
+    expect(summary.fire).toEqual({ active: 1, unacked: 1 });
+    // History keeps every occurrence.
+    const all = (await ctx.app.inject({ method: 'GET', url: '/api/alarms?state=all', headers: { cookie: admin } })).json();
+    expect(all.total).toBe(4);
   });
 
   it('snapshot reconcile clears points the panel no longer reports', async () => {
@@ -153,7 +184,8 @@ describe('alarm lifecycle', () => {
     await send(batch({ events: [ev(1, 7, 'alarm'), ev(2, 7, 'quiet')] }));
     const res = await send(batch({ epoch: 'epoch-0002', events: [ev(1, 9, 'alarm')] }));
     expect(res.json()).toEqual({ ackedSeq: 1 });
-    expect((await activeAlarms()).length).toBe(1);
+    // point 9 active; point 7 cleared but latched (unacknowledged fire)
+    expect((await activeAlarms()).map((a) => a.latched).sort()).toEqual([false, true]);
   });
 
   it('raises and clears a device communication alarm', async () => {

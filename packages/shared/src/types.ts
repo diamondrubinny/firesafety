@@ -64,6 +64,8 @@ export interface AlarmView {
   category: import('./alarms.js').AlarmCategory;
   priority: number;
   active: boolean;
+  /** Cleared at the panel but kept in the active list until acknowledged (fire / pre-alarm). */
+  latched: boolean;
   raisedAt: string;
   clearedAt: string | null;
   ackedAt: string | null;
