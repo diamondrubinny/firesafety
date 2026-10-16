@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { assertPublicHost, isPublicAddress } from '../src/lib/net-guard.js';
 import { sendSms } from '../src/services/providers/sms.js';
-import { sendEmail } from '../src/services/providers/email.js';
+import { sendEmail, smtpError } from '../src/services/providers/email.js';
 import { DEFAULT_NOTIFICATION_SETTINGS } from '@firesafety/shared';
 
 describe('net guard', () => {
@@ -39,7 +39,9 @@ describe('provider guards outside development', () => {
   it('SMTP is limited to standard ports and reports coarse errors only', async () => {
     const email = { ...DEFAULT_NOTIFICATION_SETTINGS.email, enabled: true, host: '127.0.0.1', port: 22, from: 'a@b.example' };
     await expect(sendEmail(email, undefined, 'x@y.example', { title: 't', text: 't', url: 'u', urgent: false }, false)).rejects.toThrow(/port must be/);
-    const closed = { ...email, port: 2525 };
-    await expect(sendEmail(closed, undefined, 'x@y.example', { title: 't', text: 't', url: 'u', urgent: false }, false)).rejects.toThrow(/^smtp connection failed$/);
+    // Socket-level details (ECONNREFUSED, EHOSTUNREACH, …) are never exposed.
+    expect(smtpError(Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:2525'), { code: 'ECONNREFUSED' }))).toMatchObject({ message: 'smtp connection failed', retryable: true });
+    expect(smtpError({ responseCode: 535 })).toMatchObject({ message: 'smtp authentication failed', retryable: false });
+    expect(smtpError({ responseCode: 451 })).toMatchObject({ message: 'smtp rejected the message (451)', retryable: true });
   });
 });

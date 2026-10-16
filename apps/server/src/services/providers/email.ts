@@ -41,11 +41,15 @@ export async function sendEmail(
       priority: msg.urgent ? 'high' : 'normal',
     });
   } catch (err) {
-    // Coarse categories only: detailed socket errors would let the test button probe internal hosts.
-    const code = (err as { responseCode?: number }).responseCode;
-    const message = !code ? 'smtp connection failed' : code === 535 || code === 534 ? 'smtp authentication failed' : `smtp rejected the message (${code})`;
-    throw new ProviderError(message, !code || (code >= 400 && code < 500));
+    throw smtpError(err);
   } finally {
     transport.close();
   }
+}
+
+/** Coarse categories only: detailed socket errors would let the test button probe internal hosts. */
+export function smtpError(err: unknown): ProviderError {
+  const code = (err as { responseCode?: number }).responseCode;
+  const message = !code ? 'smtp connection failed' : code === 535 || code === 534 ? 'smtp authentication failed' : `smtp rejected the message (${code})`;
+  return new ProviderError(message, !code || (code >= 400 && code < 500));
 }
