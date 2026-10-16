@@ -184,3 +184,58 @@ def test_events_survive_uplink_outage(tmp_path):
             app.close()
 
     run(go())
+
+
+def test_spoofed_notification_from_other_address_is_ignored(tmp_path):
+    async def go():
+        panel, app, col, _ = await setup(tmp_path, notify=False)
+        attacker_port = next(_ports)
+        attacker = create_panel(f"127.0.0.1/8:{attacker_port}", 1001, 20, [])
+        try:
+            # The attacker claims to be device 1001 and sends a fake fire to the collector.
+            from bacpypes3.pdu import Address
+            attacker.recipients = [Address(f"127.0.0.1:{col_port(app)}")]
+            await attacker.set_state(3, "alarm")
+            await asyncio.sleep(0.3)
+            assert events(col) == []
+        finally:
+            attacker.close()
+            panel.close()
+            app.close()
+
+    run(go())
+
+
+def test_remote_writes_to_collector_objects_are_refused(tmp_path):
+    async def go():
+        panel, app, col, _ = await setup(tmp_path, notify=False)
+        attacker = create_application(f"127.0.0.1/8:{next(_ports)}", 4000099)
+        try:
+            from bacpypes3.pdu import Address
+            from bacpypes3.primitivedata import ObjectIdentifier
+            try:
+                await asyncio.wait_for(attacker.write_property(Address(f"127.0.0.1:{col_port(app)}"), ObjectIdentifier(("device", 4000001)), "objectName", "pwned"), 3)
+                accepted = True
+            except BaseException as err:  # noqa: BLE001 - bacpypes3 raises its Error PDU type
+                if isinstance(err, asyncio.CancelledError):
+                    raise
+                assert "service-request-denied" in str(err)
+                accepted = False
+            assert accepted is False
+            assert str(app.device_object.objectName) == "fs-collector-4000001"
+            # reads are still answered
+            name = await asyncio.wait_for(attacker.read_property(Address(f"127.0.0.1:{col_port(app)}"), ObjectIdentifier(("device", 4000001)), "objectName"), 3)
+            assert str(name) == "fs-collector-4000001"
+        finally:
+            attacker.close()
+            panel.close()
+            app.close()
+
+    run(go())
+
+
+def col_port(app):
+    for obj in app.objectIdentifier.values():
+        if str(obj.objectIdentifier[0]) == "network-port":
+            return int(obj.bacnetIPUDPPort)
+    raise AssertionError("no network port")

@@ -4,6 +4,7 @@ import { ROLE_LABELS_HE, hasGlobalScope, type AdminUser, type Building, type Pag
 import { api, errorMessage } from '../lib/api';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { ErrorBox, Loading } from '../components/Status';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export function AdminUsersPage() {
   useDocumentTitle('משתמשים והרשאות');
@@ -26,6 +27,33 @@ export function AdminUsersPage() {
         </ul>
       )}
     </section>
+  );
+}
+
+function ActiveToggle({ user }: { user: AdminUser }) {
+  const qc = useQueryClient();
+  const [confirm, setConfirm] = useState(false);
+  const act = useMutation({
+    mutationFn: () => api.post(`/api/admin/users/${user.id}/${user.active ? 'deactivate' : 'activate'}`),
+    onSettled: () => { setConfirm(false); void qc.invalidateQueries({ queryKey: ['admin-users'] }); },
+  });
+  return (
+    <div className="row">
+      {user.active ? (
+        <button type="button" className="btn btn-small btn-danger" onClick={() => setConfirm(true)}>השבתת משתמש<span className="sr-only"> {user.displayName}</span></button>
+      ) : (
+        <button type="button" className="btn btn-small" onClick={() => act.mutate()}>הפעלה מחדש<span className="sr-only"> {user.displayName}</span></button>
+      )}
+      {act.error && <span role="alert" className="err small">{errorMessage(act.error)}</span>}
+      <ConfirmDialog
+        open={confirm}
+        title="השבתת משתמש"
+        message={`להשבית את ${user.displayName}? כל ההתחברויות הפעילות שלו יבוטלו מיד, והוא לא יקבל התראות.`}
+        confirmLabel="השבתה"
+        onConfirm={() => act.mutate()}
+        onCancel={() => setConfirm(false)}
+      />
+    </div>
   );
 }
 
@@ -61,6 +89,7 @@ function UserScopeEditor({ user, buildings }: { user: AdminUser; buildings: Buil
         תפקידים: {user.roles.map((r) => ROLE_LABELS_HE[r]).join(', ') || '—'}
         {!user.active && <strong> (לא פעיל)</strong>}
       </p>
+      <ActiveToggle user={user} />
       {global ? (
         <p className="muted">מנהל מערכת רואה את כל המבנים.</p>
       ) : (

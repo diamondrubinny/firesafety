@@ -87,6 +87,11 @@ export class UserService {
     };
   }
 
+  async setActive(userId: string, active: boolean): Promise<void> {
+    const r = await this.db.query('UPDATE app_user SET active = $2 WHERE id = $1', [userId, active]);
+    if (r.rowCount === 0) throw notFound('User');
+  }
+
   /** Replaces the user's building scope atomically. Returns previous and new sizes for auditing. */
   async setScope(userId: string, buildingIds: string[]): Promise<{ before: number; after: number }> {
     const unique = [...new Set(buildingIds)];

@@ -1,17 +1,27 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
+  hasGlobalScope,
   myNotificationsSchema,
   normalizePhone,
+  phoneVerifyConfirmSchema,
+  phoneVerifyStartSchema,
+  type PhoneVerifyStartResult,
   notificationSettingsUpdateSchema,
   paginationSchema,
   pushSubscriptionSchema,
   testNotificationSchema,
+  maskPhone,
   type Channel,
   type MyNotificationsView,
 } from '@firesafety/shared';
 import { requireAuth, requireRole, requireUser } from '../auth/guards.js';
 import { badRequest, HttpError, parse } from '../lib/errors.js';
 import { isAllowedPushEndpoint } from '../services/providers/push.js';
+import { OTP_TTL_SECONDS } from '../services/contacts.js';
+import type { AuthUser } from '../services/users.js';
+
+/** Only these roles receive alarm notifications (see NotificationService.recipients). */
+const isEligible = (u: AuthUser) => hasGlobalScope(u.roles) || u.roles.includes('SafetyOfficer');
 import { ProviderError } from '../services/providers/types.js';
 
 /** Current user's own notification preferences and devices. */
@@ -29,7 +39,9 @@ export const myNotificationRoutes: FastifyPluginAsync = async (app) => {
     ]);
     const s = resolved.settings;
     return {
+      eligible: isEligible(user),
       phoneHint: contact.phoneHint,
+      pendingPhoneHint: contact.pendingPhoneHint,
       email: contact.email,
       channels: contact.channels,
       whatsappOptIn: contact.whatsappOptIn,
@@ -41,11 +53,8 @@ export const myNotificationRoutes: FastifyPluginAsync = async (app) => {
   app.put('/me/notifications', async (req) => {
     const user = requireUser(req);
     const input = parse(myNotificationsSchema, req.body);
-    // null phone = keep current number unless explicitly cleared with ""
-    const current = await services.contacts.get(user.id);
-    const phone = input.phone === null ? current.phone : input.phone === '' ? null : input.phone;
-    if (phone && !normalizePhone(phone)) throw badRequest('Invalid phone number', [{ path: 'phone', message: 'invalid phone number' }]);
-    await services.contacts.update(user.id, { phone, channels: input.channels, whatsappOptIn: input.whatsappOptIn });
+    const deletePhone = input.phone === '';
+    await services.contacts.update(user.id, { deletePhone, channels: input.channels, whatsappOptIn: input.whatsappOptIn });
     await services.audit.write({
       userId: user.id,
       action: 'contact.update',
@@ -53,9 +62,42 @@ export const myNotificationRoutes: FastifyPluginAsync = async (app) => {
       entityId: user.id,
       outcome: 'success',
       ipHash: req.ipHash,
-      details: { channels: input.channels, whatsappOptIn: input.whatsappOptIn, phoneChanged: phone !== current.phone },
+      details: { channels: input.channels, whatsappOptIn: input.whatsappOptIn, phoneDeleted: deletePhone },
     });
     return { ok: true };
+  });
+
+  const requireEligible = async (req: Parameters<typeof requireUser>[0]) => {
+    if (!isEligible(requireUser(req))) throw new HttpError(403, 'forbidden', 'Notifications are sent to safety officers and administrators only');
+  };
+
+  /** Step 1: send a one-time code to the new number. The number is saved only after step 2. */
+  app.post('/me/phone/verify', { preHandler: requireEligible, config: { rateLimit: { max: 3, timeWindow: '10 minutes' } } }, async (req): Promise<PhoneVerifyStartResult> => {
+    const user = requireUser(req);
+    const { phone: raw } = parse(phoneVerifyStartSchema, req.body);
+    if (!normalizePhone(raw)) throw badRequest('Invalid phone number', [{ path: 'phone', message: 'invalid phone number' }]);
+    const { phone, code } = await services.contacts.startPhoneVerification(user.id, raw);
+    try {
+      const sentVia = await services.notifications.sendVerificationCode(phone, code);
+      await services.audit.write({ userId: user.id, action: 'contact.phone.verify_start', entity: 'user', entityId: user.id, outcome: 'success', ipHash: req.ipHash, details: { via: sentVia } });
+      return { sentVia, phoneHint: maskPhone(phone), expiresInSeconds: OTP_TTL_SECONDS };
+    } catch (err) {
+      throw new HttpError(502, 'provider_error', err instanceof ProviderError ? err.message : 'could not send the verification code');
+    }
+  });
+
+  /** Step 2: confirm the code; promotes the pending number. */
+  app.post('/me/phone/confirm', { preHandler: requireEligible, config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    const user = requireUser(req);
+    const { code } = parse(phoneVerifyConfirmSchema, req.body);
+    try {
+      const phoneHint = await services.contacts.confirmPhoneVerification(user.id, code);
+      await services.audit.write({ userId: user.id, action: 'contact.phone.verified', entity: 'user', entityId: user.id, outcome: 'success', ipHash: req.ipHash });
+      return { phoneHint };
+    } catch (err) {
+      await services.audit.write({ userId: user.id, action: 'contact.phone.verified', entity: 'user', entityId: user.id, outcome: 'denied', ipHash: req.ipHash });
+      throw err;
+    }
   });
 
   app.get('/push/public-key', async () => ({ publicKey: await services.settings.ensurePushKeys() }));
@@ -77,7 +119,7 @@ export const myNotificationRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
-  app.post('/me/notifications/test', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/me/notifications/test', { preHandler: requireEligible, config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req) => {
     const user = requireUser(req);
     return { results: await services.notifications.sendSelfTest(user.id) };
   });

@@ -345,6 +345,21 @@ export class NotificationService {
     return maskPhone(to);
   }
 
+  /** Delivers a phone-verification code by SMS, or WhatsApp when SMS is not configured. */
+  async sendVerificationCode(phone: string, code: string): Promise<'sms' | 'whatsapp'> {
+    const { settings: s, secrets } = await this.settings.get();
+    const text = `קוד אימות למערכת ניטור האש: ${code}. הקוד תקף ל-10 דקות. אם לא ביקשת אותו, אפשר להתעלם.`;
+    if (s.enabled && s.sms.enabled) {
+      await sendSms(s.sms, secrets, phone, text, { twilioBase: this.opts.twilioBase, allowInsecure: this.opts.allowInsecure });
+      return 'sms';
+    }
+    if (s.enabled && s.whatsapp.enabled) {
+      await sendWhatsApp(s.whatsapp, secrets.whatsappAccessToken, phone, `קוד אימות: ${code}`, this.opts.publicOrigin, this.opts.whatsappBase);
+      return 'whatsapp';
+    }
+    throw new ProviderError('no SMS or WhatsApp channel is configured', false);
+  }
+
   /** User self-test on every channel they can currently receive. */
   async sendSelfTest(userId: string): Promise<Record<string, string>> {
     const resolved = await this.settings.get();

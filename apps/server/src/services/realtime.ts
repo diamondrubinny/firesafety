@@ -19,6 +19,9 @@ interface Client {
  * Messages carry only categories, never alarm content: clients re-fetch through
  * the scoped REST API, so a filtering bug here cannot leak data across buildings.
  */
+/** Per-user cap on live connections (tabs/devices); the oldest is closed beyond it. */
+export const MAX_SOCKETS_PER_USER = 5;
+
 export class RealtimeHub {
   private clients = new Set<Client>();
 
@@ -33,6 +36,11 @@ export class RealtimeHub {
 
   async add(ws: WebSocket, user: ScopedUser, sessionToken: string): Promise<void> {
     const client: Client = { ws, userId: user.id, sessionToken, buildings: await this.loadScope(user) };
+    const mine = [...this.clients].filter((c) => c.userId === user.id);
+    for (const old of mine.slice(0, Math.max(0, mine.length - MAX_SOCKETS_PER_USER + 1))) {
+      old.ws.close(4429, 'too many connections');
+      this.clients.delete(old);
+    }
     this.clients.add(client);
     ws.on('close', () => this.clients.delete(client));
     ws.on('error', () => this.clients.delete(client));
@@ -59,7 +67,8 @@ export class RealtimeHub {
   /** Re-validates sessions and reloads scopes; closes sockets whose session ended. */
   async refresh(): Promise<void> {
     for (const client of [...this.clients]) {
-      const user = await this.sessions.resolve(client.sessionToken).catch(() => null);
+      // Read-only check: an open tab must not keep an idle session alive forever.
+      const user = await this.sessions.check(client.sessionToken).catch(() => null);
       if (!user || user.id !== client.userId) {
         client.ws.close(4401, 'session ended');
         this.clients.delete(client);

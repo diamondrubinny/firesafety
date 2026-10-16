@@ -13,6 +13,8 @@ export async function sendEmail(
   allowInsecure = false,
 ): Promise<void> {
   if (!cfg.host || !cfg.from) throw new ProviderError('email is not configured', false);
+  // Standard SMTP ports only: the test button must not become a port scanner.
+  if (!allowInsecure && ![25, 465, 587, 2525].includes(cfg.port)) throw new ProviderError('SMTP port must be 25, 465, 587 or 2525', false);
   const transport = nodemailer.createTransport({
     host: cfg.host,
     port: cfg.port,
@@ -39,8 +41,10 @@ export async function sendEmail(
       priority: msg.urgent ? 'high' : 'normal',
     });
   } catch (err) {
-    const code = (err as { responseCode?: number; code?: string }).responseCode;
-    throw new ProviderError(`smtp error${code ? ` ${code}` : ` (${(err as { code?: string }).code ?? 'unknown'})`}`, !code || code >= 400 && code < 500);
+    // Coarse categories only: detailed socket errors would let the test button probe internal hosts.
+    const code = (err as { responseCode?: number }).responseCode;
+    const message = !code ? 'smtp connection failed' : code === 535 || code === 534 ? 'smtp authentication failed' : `smtp rejected the message (${code})`;
+    throw new ProviderError(message, !code || (code >= 400 && code < 500));
   } finally {
     transport.close();
   }

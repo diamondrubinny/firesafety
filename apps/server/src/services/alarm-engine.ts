@@ -17,12 +17,17 @@ export interface AlarmChange {
   kind: 'point' | 'device_comm' | 'collector_comm';
 }
 
+export class IngestLimitError extends Error {}
+
 export interface CollectorIdentity {
   id: string;
   name: string;
 }
 
 const DEVICE_COMM_MESSAGE = 'אין תקשורת לרכזת';
+/** Hard caps per collector: bound the damage of a stolen token and of misconfiguration. */
+export const MAX_DEVICES_PER_COLLECTOR = 200;
+export const MAX_POINTS_PER_COLLECTOR = 50_000;
 const COLLECTOR_COMM_MESSAGE = 'אין קשר ל-Collector: הניטור אינו פעיל';
 
 type Client = pg.PoolClient;
@@ -45,10 +50,25 @@ export class AlarmEngine {
       );
       let ackedSeq = crow[0]?.epoch === batch.epoch ? Number(crow[0].acked_seq) : 0;
 
+      const counts = (
+        await c.query<{ devices: number; points: number }>(
+          `SELECT (SELECT count(*) FROM bacnet_device WHERE collector_id = $1)::int AS devices,
+                  (SELECT count(*) FROM point p JOIN bacnet_device d ON d.id = p.device_id WHERE d.collector_id = $1)::int AS points`,
+          [collector.id],
+        )
+      ).rows[0]!;
       const deviceIds = new Map<number, string>();
+      const knownDevices = new Map(
+        (await c.query<{ device_instance: number; id: string }>('SELECT device_instance, id FROM bacnet_device WHERE collector_id = $1', [collector.id])).rows.map((r) => [r.device_instance, r.id]),
+      );
+      const ensureDeviceCapacity = (instance: number) => {
+        if (knownDevices.has(instance) || deviceIds.has(instance)) return;
+        if (++counts.devices > MAX_DEVICES_PER_COLLECTOR) throw new IngestLimitError(`too many devices for this collector (max ${MAX_DEVICES_PER_COLLECTOR})`);
+      };
       const deviceId = async (instance: number): Promise<string> => {
         const cached = deviceIds.get(instance);
         if (cached) return cached;
+        ensureDeviceCapacity(instance);
         const { rows } = await c.query<{ id: string }>(
           `INSERT INTO bacnet_device (collector_id, device_instance, address)
            VALUES ($1, $2, 'unknown')
@@ -61,6 +81,7 @@ export class AlarmEngine {
       };
 
       for (const d of batch.devices) {
+        ensureDeviceCapacity(d.instance);
         const { rows } = await c.query<{ id: string; building_id: string | null }>(
           `INSERT INTO bacnet_device (collector_id, device_instance, address, name, vendor, model, online, last_error, last_seen_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $7 THEN now() END)
@@ -84,13 +105,10 @@ export class AlarmEngine {
       }
 
       for (const p of batch.points) {
+        const pointId = await this.upsertPoint(c, await deviceId(p.deviceInstance), p.objectType, p.objectInstance, counts);
         await c.query(
-          `INSERT INTO point (device_id, object_type, object_instance, name, description)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (device_id, object_type, object_instance) DO UPDATE SET
-             name = COALESCE(EXCLUDED.name, point.name),
-             description = COALESCE(EXCLUDED.description, point.description)`,
-          [await deviceId(p.deviceInstance), p.objectType, p.objectInstance, p.name ?? null, p.description ?? null],
+          `UPDATE point SET name = COALESCE($2, name), description = COALESCE($3, description) WHERE id = $1`,
+          [pointId, p.name ?? null, p.description ?? null],
         );
       }
 
@@ -106,7 +124,7 @@ export class AlarmEngine {
         if (item.t === 'event') {
           const e = item.e;
           const dev = await deviceId(e.deviceInstance);
-          const pointId = await this.upsertPoint(c, dev, e.objectType, e.objectInstance);
+          const pointId = await this.upsertPoint(c, dev, e.objectType, e.objectInstance, counts);
           const category = categorize(e);
           const ins = await c.query(
             `INSERT INTO event_log (collector_id, epoch, seq, point_id, source, source_ts, observed_at, category, event_state, life_safety_state, raw)
@@ -158,7 +176,13 @@ export class AlarmEngine {
     return changes;
   }
 
-  private async upsertPoint(c: Client, deviceId: string, objectType: string, objectInstance: number): Promise<string> {
+  private async upsertPoint(c: Client, deviceId: string, objectType: string, objectInstance: number, counts: { points: number }): Promise<string> {
+    const existing = await c.query<{ id: string }>(
+      'SELECT id FROM point WHERE device_id = $1 AND object_type = $2 AND object_instance = $3',
+      [deviceId, objectType, objectInstance],
+    );
+    if (existing.rows[0]) return existing.rows[0].id;
+    if (++counts.points > MAX_POINTS_PER_COLLECTOR) throw new IngestLimitError(`too many points for this collector (max ${MAX_POINTS_PER_COLLECTOR})`);
     const { rows } = await c.query<{ id: string }>(
       `INSERT INTO point (device_id, object_type, object_instance) VALUES ($1, $2, $3)
        ON CONFLICT (device_id, object_type, object_instance) DO UPDATE SET object_type = EXCLUDED.object_type

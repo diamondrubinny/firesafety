@@ -44,7 +44,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const handle = req.cookies[cookieNames.login];
     reply.clearCookie(cookieNames.login, cookieBase);
     const fail = async (reason: string, details: Record<string, unknown> = {}) => {
-      await services.audit.write({ action: 'auth.login', outcome: 'denied', ipHash: req.ipHash, details: { reason, ...details } });
+      await services.audit.writeThrottled(`auth.login:${req.ipHash}:${reason}`, { action: 'auth.login', outcome: 'denied', ipHash: req.ipHash, details: { reason, ...details } });
       return reply.redirect(`/login?error=${encodeURIComponent(reason)}`);
     };
     if (!handle) return fail('missing_login_state');

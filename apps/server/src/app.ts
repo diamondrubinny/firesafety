@@ -11,7 +11,7 @@ import { AuditService } from './services/audit.js';
 import { BuildingService } from './services/buildings.js';
 import { SessionService } from './services/sessions.js';
 import { UserService } from './services/users.js';
-import { AlarmEngine } from './services/alarm-engine.js';
+import { AlarmEngine, IngestLimitError } from './services/alarm-engine.js';
 import { AlarmService } from './services/alarms.js';
 import { CollectorService } from './services/collectors.js';
 import { RealtimeHub } from './services/realtime.js';
@@ -98,7 +98,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
         censor: '[redacted]',
       },
     },
-    trustProxy: config.TRUST_PROXY,
+    // Exactly one trusted hop (the bundled reverse proxy); never trust arbitrary X-Forwarded-For chains.
+    trustProxy: config.TRUST_PROXY ? (_address: string, hop: number) => hop === 0 : false,
     bodyLimit: 100 * 1024,
   });
 
@@ -107,7 +108,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   if (!config.SETTINGS_ENCRYPTION_KEY) app.log.warn('SETTINGS_ENCRYPTION_KEY not set: using an insecure development key');
   const box = new SecretBox(config.SETTINGS_ENCRYPTION_KEY ?? DEV_ONLY_KEY);
   const settings = new SettingsService(db, box);
-  const contacts = new ContactService(db, box);
+  const contacts = new ContactService(db, box, config.AUDIT_IP_PEPPER);
   app.decorate('services', {
     audit: new AuditService(db),
     users: new UserService(db),
@@ -154,9 +155,16 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     }),
   );
   app.decorate('hub', new RealtimeHub(db, app.services.sessions));
+  let jobsRunning = false;
   app.decorate('runJobs', async () => {
-    app.hub.notify(await app.services.engine.checkCollectors(config.COLLECTOR_STALE_SECONDS));
-    await app.hub.refresh();
+    if (jobsRunning) return; // never overlap (slow DB must not pile up runs)
+    jobsRunning = true;
+    try {
+      app.hub.notify(await app.services.engine.checkCollectors(config.COLLECTOR_STALE_SECONDS));
+      await app.hub.refresh();
+    } finally {
+      jobsRunning = false;
+    }
   });
   let notifying = false;
   app.decorate('runNotifications', async () => {
@@ -214,6 +222,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   });
 
   app.setErrorHandler((err, req, reply) => {
+    if (err instanceof IngestLimitError) {
+      req.log.warn({ collector: req.collector?.name }, err.message);
+      return reply.status(422).send({ error: 'limit_exceeded', message: err.message });
+    }
     if (err instanceof HttpError) {
       return reply.status(err.statusCode).send({ error: err.code, message: err.message, details: err.details });
     }

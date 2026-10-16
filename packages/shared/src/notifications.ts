@@ -129,13 +129,17 @@ export const testNotificationSchema = z.object({
 });
 
 export const myNotificationsSchema = z.object({
-  phone: z.string().trim().max(32).nullable(),
+  /** null = keep, '' = delete. A new number must go through /me/phone/verify. */
+  phone: z.literal('').nullable(),
   channels: channelList,
   whatsappOptIn: z.boolean(),
 });
 
 export interface MyNotificationsView {
+  /** Whether this user's role receives alarm notifications at all. */
+  eligible: boolean;
   phoneHint: string | null;
+  pendingPhoneHint: string | null;
   email: string;
   channels: Channel[];
   whatsappOptIn: boolean;
@@ -160,4 +164,12 @@ export interface NotificationLogEntry {
   attempts: number;
   recipientHint: string | null;
   lastError: string | null;
+}
+
+export const phoneVerifyStartSchema = z.object({ phone: z.string().trim().min(6).max(32) });
+export const phoneVerifyConfirmSchema = z.object({ code: z.string().regex(/^\d{6}$/) });
+export interface PhoneVerifyStartResult {
+  sentVia: 'sms' | 'whatsapp';
+  phoneHint: string;
+  expiresInSeconds: number;
 }

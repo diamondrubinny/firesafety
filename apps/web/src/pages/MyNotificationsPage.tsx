@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CHANNEL_LABELS_HE, CHANNELS, type Channel, type MyNotificationsView } from '@firesafety/shared';
+import { CHANNEL_LABELS_HE, CHANNELS, type Channel, type MyNotificationsView, type PhoneVerifyStartResult } from '@firesafety/shared';
 import { api, errorMessage } from '../lib/api';
 import { currentSubscription, disablePush, enablePush, pushSupport } from '../lib/push';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
@@ -10,7 +10,6 @@ export function MyNotificationsPage() {
   useDocumentTitle('ההתראות שלי');
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['me', 'notifications'], queryFn: () => api.get<MyNotificationsView>('/api/me/notifications') });
-  const [phone, setPhone] = useState('');
   const [channels, setChannels] = useState<Channel[]>([]);
   const [whatsapp, setWhatsapp] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -22,11 +21,10 @@ export function MyNotificationsPage() {
   }, [data]);
 
   const save = useMutation({
-    // Empty phone field = keep the stored number (it is never sent back to the browser).
-    mutationFn: () => api.put('/api/me/notifications', { phone: phone.trim() === '' ? null : phone, channels, whatsappOptIn: whatsapp }),
+    // The phone number is managed separately (verified with a one-time code).
+    mutationFn: () => api.put('/api/me/notifications', { phone: null, channels, whatsappOptIn: whatsapp }),
     onSuccess: () => {
       setSaved(true);
-      setPhone('');
       void qc.invalidateQueries({ queryKey: ['me', 'notifications'] });
     },
   });
@@ -59,12 +57,12 @@ export function MyNotificationsPage() {
             <h2 id="contact-title" className="h3">פרטי קשר וערוצים</h2>
             {save.error && <div role="alert" className="alert alert-error">{errorMessage(save.error)}</div>}
             <p className="small">דוא"ל: <span dir="ltr">{data.email}</span> (מתוך חשבון המוסד)</p>
-            <label htmlFor="phone">טלפון נייד {data.phoneHint && <span className="muted">(שמור: <span dir="ltr">{data.phoneHint}</span>)</span>}</label>
-            <input id="phone" type="tel" inputMode="tel" autoComplete="tel" dir="ltr" placeholder={data.phoneHint ? 'השארה ריקה = ללא שינוי' : '050-1234567'} value={phone} onChange={(e) => { setPhone(e.target.value); setSaved(false); }} aria-describedby="phone-hint" />
-            <small id="phone-hint" className="muted">המספר נשמר מוצפן ומשמש רק לשליחת התראות.</small>
-            {data.phoneHint && (
-              <button type="button" className="btn btn-small" onClick={() => clearPhone.mutate()} disabled={clearPhone.isPending}>מחיקת מספר הטלפון</button>
-            )}
+            <p className="small">
+              טלפון נייד: {data.phoneHint ? <span dir="ltr">{data.phoneHint}</span> : <span className="muted">לא הוגדר</span>}
+              {data.phoneHint && (
+                <> <button type="button" className="btn btn-small" onClick={() => clearPhone.mutate()} disabled={clearPhone.isPending}>מחיקת מספר הטלפון</button></>
+              )}
+            </p>
             <fieldset>
               <legend>ערוצים שאני רוצה לקבל</legend>
               {CHANNELS.map((c) => (
@@ -88,9 +86,13 @@ export function MyNotificationsPage() {
             </div>
           </form>
 
+          {data.eligible ? <PhoneCard pendingHint={data.pendingPhoneHint} hasPhone={!!data.phoneHint} /> : (
+            <p className="alert alert-warning">התראות SMS, WhatsApp ודוא"ל נשלחות לממוני בטיחות ולמנהלי המערכת בלבד.</p>
+          )}
+
           <PushCard registered={data.pushSubscriptions} />
 
-          <div className="card narrow">
+          {data.eligible && <div className="card narrow">
             <h2 className="h3">בדיקה</h2>
             <p className="small">שולח הודעת בדיקה לכל הערוצים הפעילים שלך.</p>
             <button type="button" className="btn" onClick={() => test.mutate()} disabled={test.isPending}>שליחת התראת בדיקה אליי</button>
@@ -106,10 +108,55 @@ export function MyNotificationsPage() {
                 )
               )}
             </div>
-          </div>
+          </div>}
         </>
       )}
     </section>
+  );
+}
+
+/** Two-step phone verification: the number is saved only after the one-time code is confirmed. */
+function PhoneCard({ pendingHint, hasPhone }: { pendingHint: string | null; hasPhone: boolean }) {
+  const qc = useQueryClient();
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [sent, setSent] = useState<PhoneVerifyStartResult | null>(null);
+  const [done, setDone] = useState('');
+  const start = useMutation({
+    mutationFn: () => api.post<PhoneVerifyStartResult>('/api/me/phone/verify', { phone }),
+    onSuccess: (r) => { setSent(r); setDone(''); void qc.invalidateQueries({ queryKey: ['me', 'notifications'] }); },
+  });
+  const confirm = useMutation({
+    mutationFn: () => api.post<{ phoneHint: string }>('/api/me/phone/confirm', { code }),
+    onSuccess: (r) => {
+      setDone(`המספר ${r.phoneHint} אומת ונשמר.`);
+      setSent(null);
+      setCode('');
+      setPhone('');
+      void qc.invalidateQueries({ queryKey: ['me', 'notifications'] });
+    },
+  });
+  const awaitingCode = !!sent || !!pendingHint;
+  return (
+    <div className="card narrow" aria-labelledby="phone-title">
+      <h2 id="phone-title" className="h3">{hasPhone ? 'החלפת מספר טלפון' : 'הוספת מספר טלפון'}</h2>
+      <p className="muted small">כדי לוודא שההתראות מגיעות אליך, נשלח קוד אימות למספר. המספר נשמר מוצפן רק אחרי האימות.</p>
+      <form onSubmit={(e) => { e.preventDefault(); start.mutate(); }} className="row">
+        <label htmlFor="phone" className="sr-only">מספר טלפון נייד</label>
+        <input id="phone" type="tel" inputMode="tel" autoComplete="tel" dir="ltr" required placeholder="050-1234567" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <button type="submit" className="btn" disabled={start.isPending}>שליחת קוד אימות</button>
+      </form>
+      {start.error && <div role="alert" className="alert alert-error">{errorMessage(start.error)}</div>}
+      {awaitingCode && (
+        <form onSubmit={(e) => { e.preventDefault(); confirm.mutate(); }} className="row">
+          <label htmlFor="otp">קוד שנשלח {sent ? `ב-${sent.sentVia === 'sms' ? 'SMS' : 'WhatsApp'} ל-` : 'ל-'}<span dir="ltr">{sent?.phoneHint ?? pendingHint}</span></label>
+          <input id="otp" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required dir="ltr" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+          <button type="submit" className="btn btn-primary" disabled={confirm.isPending}>אימות</button>
+        </form>
+      )}
+      {confirm.error && <div role="alert" className="alert alert-error">{errorMessage(confirm.error)}</div>}
+      <p aria-live="polite" className="ok small">{done}</p>
+    </div>
   );
 }
 

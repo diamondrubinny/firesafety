@@ -39,6 +39,18 @@ export class SessionService {
     return rows[0] ? toAuthUser(rows[0]) : null;
   }
 
+  /** Read-only validity check (does not extend the idle timeout). Used by background re-validation. */
+  async check(token: string): Promise<AuthUser | null> {
+    const { rows } = await this.db.query(
+      `SELECT u.id, u.email, u.display_name, u.roles, u.active
+         FROM user_session s JOIN app_user u ON u.id = s.user_id
+        WHERE s.token_hash = $1 AND u.active AND s.expires_at > now()
+          AND s.last_seen_at > now() - make_interval(mins => $2)`,
+      [sha256(token), this.opts.idleMinutes],
+    );
+    return rows[0] ? toAuthUser(rows[0]) : null;
+  }
+
   async revoke(token: string): Promise<void> {
     await this.db.query('DELETE FROM user_session WHERE token_hash = $1', [sha256(token)]);
   }

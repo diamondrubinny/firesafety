@@ -63,20 +63,28 @@ services:
     restart: unless-stopped
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS}
+      # Source networks allowed to reach /ingest/* (the collector host). Narrow this to the collector's address.
+      INGEST_ALLOWED_CIDRS: ${INGEST_ALLOWED_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
     ports:
       - "443:443"
     volumes:
       - ./local/certs:/certs:ro
       - caddy-data:/data
+      - caddy-config:/config
     depends_on:
       server:
         condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     networks: [frontend]
 
 volumes:
   db-data:
   caddy-data:
+  caddy-config:
   clamav-db:
 
 networks:

@@ -127,13 +127,41 @@ beforeEach(async () => {
   });
   const dev = (await ctx.app.inject({ method: 'GET', url: '/api/admin/devices', headers: { cookie: admin } })).json()[0];
   await ctx.app.inject({ method: 'PATCH', url: `/api/admin/devices/${dev.id}`, headers: write(admin), payload: { buildingId: bIn } });
-  // Officer: phone + WhatsApp consent + one push device. Admin: e-mail only (no phone).
-  await ctx.app.inject({ method: 'PUT', url: '/api/me/notifications', headers: write(officer), payload: { phone: '050-123-4567', channels: ['push', 'email', 'sms', 'whatsapp'], whatsappOptIn: true } });
+  // Officer: verified phone + WhatsApp consent + one push device. Admin: e-mail only (no phone).
+  await saveSettings(settings());
+  await verifyPhone(officer, '050-123-4567');
+  await ctx.app.inject({ method: 'PUT', url: '/api/me/notifications', headers: write(officer), payload: { phone: null, channels: ['push', 'email', 'sms', 'whatsapp'], whatsappOptIn: true } });
   await ctx.app.inject({ method: 'POST', url: '/api/me/push-subscriptions', headers: write(officer), payload: pushSubscription('officer-1') });
+  captured.length = 0;
 });
+
+/** Runs the OTP flow, reading the code from the SMS captured by the fake gateway. */
+async function verifyPhone(cookie: string, phone: string) {
+  const start = await ctx.app.inject({ method: 'POST', url: '/api/me/phone/verify', headers: write(cookie), payload: { phone } });
+  expect(start.statusCode).toBe(200);
+  const sms = captured.filter((c) => c.path.startsWith('/sms')).at(-1)!;
+  const code = /(\d{6})/.exec(JSON.parse(sms.body).msg)![1]!;
+  const confirm = await ctx.app.inject({ method: 'POST', url: '/api/me/phone/confirm', headers: write(cookie), payload: { code } });
+  expect(confirm.statusCode).toBe(200);
+  return confirm.json();
+}
 afterEach(async () => ctx.close());
 
 describe('settings', () => {
+  it('a stored secret is dropped when its destination changes (cannot be redirected)', async () => {
+    await saveSettings(settings());
+    const moved = settings();
+    moved.sms.http.url = 'https://attacker.example/collect';
+    let view = await saveSettings(moved, {});
+    expect(view.secretsConfigured.smsHttpHeaders).toBe(false);
+    view = await saveSettings(moved, { smsHttpHeaders: '{"X-Api-Key":"new"}' });
+    expect(view.secretsConfigured.smsHttpHeaders).toBe(true);
+    const email = settings();
+    await saveSettings(email, { emailPassword: 'pw' });
+    email.email.host = 'smtp.attacker.example';
+    expect((await saveSettings(email, {})).secretsConfigured.emailPassword).toBe(false);
+  });
+
   it('stores secrets encrypted, never returns them, and audits only names', async () => {
     const view = await saveSettings(settings());
     expect(view.secretsConfigured).toMatchObject({ smsHttpHeaders: true, whatsappAccessToken: true, emailPassword: false });
@@ -172,9 +200,48 @@ describe('user contact and push subscriptions', () => {
     expect(Buffer.from(db[0].phone_enc).toString('latin1')).not.toContain('501234567');
   });
 
-  it('rejects invalid phone numbers', async () => {
-    const r = await ctx.app.inject({ method: 'PUT', url: '/api/me/notifications', headers: write(officer), payload: { phone: 'abc', channels: ['sms'], whatsappOptIn: false } });
+  it('rejects invalid phone numbers and direct phone writes', async () => {
+    const r = await ctx.app.inject({ method: 'POST', url: '/api/me/phone/verify', headers: write(officer), payload: { phone: 'abc-def' } });
     expect(r.statusCode).toBe(400);
+    const direct = await ctx.app.inject({ method: 'PUT', url: '/api/me/notifications', headers: write(officer), payload: { phone: '0501234567', channels: ['sms'], whatsappOptIn: false } });
+    expect(direct.statusCode).toBe(400);
+  });
+
+  it('OTP: the number is saved only after the correct code; wrong codes and attempts are limited', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/me/phone/verify', headers: write(officer), payload: { phone: '052-000-1111' } });
+    let me = (await ctx.app.inject({ method: 'GET', url: '/api/me/notifications', headers: { cookie: officer } })).json();
+    expect(me).toMatchObject({ phoneHint: '+97250•••4567', pendingPhoneHint: '+97252•••1111' });
+    for (let i = 0; i < 5; i++) {
+      const bad = await ctx.app.inject({ method: 'POST', url: '/api/me/phone/confirm', headers: write(officer), payload: { code: '000000' } });
+      expect([400]).toContain(bad.statusCode);
+    }
+    const locked = await ctx.app.inject({ method: 'POST', url: '/api/me/phone/confirm', headers: write(officer), payload: { code: '000000' } });
+    expect(locked.statusCode).toBe(429);
+    me = (await ctx.app.inject({ method: 'GET', url: '/api/me/notifications', headers: { cookie: officer } })).json();
+    expect(me.phoneHint).toBe('+97250•••4567'); // unchanged
+    const { rows } = await ctx.db.query('SELECT pending_code_hash FROM user_contact');
+    expect(rows[0].pending_code_hash).not.toMatch(/^\d{6}$/); // code stored only as a keyed hash
+  });
+
+  it('OTP: expired codes are rejected', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/api/me/phone/verify', headers: write(officer), payload: { phone: '052-000-2222' } });
+    const code = /(\d{6})/.exec(JSON.parse(captured.filter((c) => c.path.startsWith('/sms')).at(-1)!.body).msg)![1]!;
+    await ctx.db.query("UPDATE user_contact SET pending_expires_at = now() - interval '1 second'");
+    const r = await ctx.app.inject({ method: 'POST', url: '/api/me/phone/confirm', headers: write(officer), payload: { code } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('roles that do not receive notifications cannot register phones or trigger test sends', async () => {
+    const viewer = await loginAs(ctx.app, 'viewer@campus.example', ['Viewer']);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/me/phone/verify', headers: write(viewer), payload: { phone: '052-000-3333' } })).statusCode).toBe(403);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/me/notifications/test', headers: write(viewer), payload: {} })).statusCode).toBe(403);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/me/notifications', headers: { cookie: viewer } })).json().eligible).toBe(false);
+  });
+
+  it('users can delete their phone number', async () => {
+    await ctx.app.inject({ method: 'PUT', url: '/api/me/notifications', headers: write(officer), payload: { phone: '', channels: ['sms'], whatsappOptIn: false } });
+    const { rows } = await ctx.db.query('SELECT phone_enc, phone_hint FROM user_contact');
+    expect(rows[0]).toEqual({ phone_enc: null, phone_hint: null });
   });
 
   it('rejects push endpoints outside the allowlist (SSRF)', async () => {
@@ -210,7 +277,8 @@ describe('alarm notifications', () => {
     expect(push.headers.authorization).toMatch(/^vapid t=/);
     expect(push.headers.urgency).toBe('high');
 
-    expect(mails.map((m) => m.to).sort()).toEqual(['admin@campus.example', 'officer@campus.example']);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(mails.map((m) => m.to).filter((t) => t !== 'ops@campus.example').sort()).toEqual(['admin@campus.example', 'officer@campus.example']);
 
     const all = await rows();
     // Officer: 4 sent. Admin: email sent, push skipped (no device), sms/whatsapp skipped (no phone).
@@ -232,6 +300,7 @@ describe('alarm notifications', () => {
   it('respects user opt-out per channel and requires WhatsApp consent', async () => {
     await saveSettings(settings());
     await ctx.app.inject({ method: 'PUT', url: '/api/me/notifications', headers: write(officer), payload: { phone: null, channels: ['sms', 'whatsapp'], whatsappOptIn: false } });
+    captured.length = 0;
     await fire(7);
     await ctx.app.runNotifications();
     const officerRows = (await ctx.db.query('SELECT channel, status, last_error FROM notification WHERE user_id = $1 ORDER BY channel', [officerId])).rows;

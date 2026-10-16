@@ -15,7 +15,25 @@ export interface AuditRecord {
 }
 
 export class AuditService {
+  private readonly lastByKey = new Map<string, { at: number; suppressed: number }>();
+
   constructor(private readonly db: Db) {}
+
+  /**
+   * For unauthenticated, attacker-triggerable events: writes at most one row per key per window,
+   * recording how many identical events were suppressed in between (no unbounded audit growth).
+   */
+  async writeThrottled(key: string, rec: AuditRecord, windowMs = 60_000): Promise<void> {
+    const now = Date.now();
+    const prev = this.lastByKey.get(key);
+    if (prev && now - prev.at < windowMs) {
+      prev.suppressed++;
+      return;
+    }
+    if (this.lastByKey.size > 10_000) this.lastByKey.clear(); // bound memory under address spraying
+    this.lastByKey.set(key, { at: now, suppressed: 0 });
+    await this.write({ ...rec, details: { ...rec.details, ...(prev?.suppressed ? { suppressedSinceLast: prev.suppressed } : {}) } });
+  }
 
   async write(rec: AuditRecord): Promise<void> {
     await this.db.query(

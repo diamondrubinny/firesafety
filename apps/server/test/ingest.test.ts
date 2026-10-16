@@ -60,8 +60,26 @@ describe('ingest authentication', () => {
       const res = await send(batch(), auth);
       expect(res.statusCode).toBe(401);
     }
+    // Unauthenticated failures are throttled: one audit row per source per minute.
     const { rows } = await ctx.db.query("SELECT count(*)::int AS n FROM audit_log WHERE action = 'ingest.auth'");
-    expect(rows[0].n).toBe(3);
+    expect(rows[0].n).toBe(1);
+  });
+
+  it('rejects an unauthenticated request before reading a large body', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/ingest/v1/batch',
+      headers: { authorization: 'Bearer fsc_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'content-type': 'application/json' },
+      payload: '{' + 'x'.repeat(4 * 1024 * 1024),
+    });
+    expect(res.statusCode).toBe(401); // not 400: the malformed body was never parsed
+  });
+
+  it('caps the number of devices per collector', async () => {
+    const devices = Array.from({ length: 201 }, (_, i) => ({ instance: 5000 + i, address: '10.0.0.1', online: true }));
+    const res = await send(batch({ devices }));
+    expect(res.statusCode).toBe(422);
+    expect((await ctx.db.query('SELECT count(*)::int AS n FROM bacnet_device')).rows[0].n).toBe(0); // transaction rolled back
   });
 
   it('stores only a hash of the collector token', async () => {

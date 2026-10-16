@@ -11,6 +11,8 @@ from typing import Any, Awaitable, Callable
 
 from bacpypes3.apdu import (
     ConfirmedEventNotificationRequest,
+    ConfirmedRequestPDU,
+    Error,
     GetEventInformationACK,
     GetEventInformationRequest,
     SimpleAckPDU,
@@ -27,7 +29,7 @@ from .state import ObjKey, ObjState
 log = logging.getLogger(__name__)
 
 LS_TYPES = ("life-safety-point", "life-safety-zone")
-NotificationHandler = Callable[[int, ObjKey, ObjState, dict[str, Any]], Awaitable[None]]
+NotificationHandler = Callable[[int, ObjKey, ObjState, dict[str, Any], Address], Awaitable[None]]
 
 
 def key_of(oid: Any) -> ObjKey:
@@ -52,10 +54,25 @@ def timestamp_iso(ts: Any) -> str | None:
         return None
 
 
+# Incoming confirmed services this device answers. Anything else (e.g. write requests that
+# would modify the collector's own Device/NetworkPort objects) is refused.
+ALLOWED_INCOMING_CONFIRMED = {
+    2,   # confirmedEventNotification
+    12,  # readProperty
+    14,  # readPropertyMultiple
+}
+
+
 class CollectorApplication(Application):
     """Local BACnet device that listens for event notifications addressed to it."""
 
     on_notification: NotificationHandler | None = None
+
+    async def indication(self, apdu: Any) -> None:  # type: ignore[override]
+        if isinstance(apdu, ConfirmedRequestPDU) and int(apdu.apduService) not in ALLOWED_INCOMING_CONFIRMED:
+            await self.response(Error(service_choice=apdu.apduService, errorClass="services", errorCode="serviceRequestDenied", context=apdu))
+            return
+        await super().indication(apdu)
 
     async def _handle(self, apdu: Any) -> None:
         try:
@@ -73,7 +90,7 @@ class CollectorApplication(Application):
             }
             device = int(apdu.initiatingDeviceIdentifier[1])
             if self.on_notification:
-                await self.on_notification(device, key_of(apdu.eventObjectIdentifier), state, meta)
+                await self.on_notification(device, key_of(apdu.eventObjectIdentifier), state, meta, apdu.pduSource)
         except Exception:  # noqa: BLE001 - never let a malformed notification break the stack
             log.exception("failed to process event notification")
 

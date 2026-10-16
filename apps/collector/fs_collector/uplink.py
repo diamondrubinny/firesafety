@@ -15,12 +15,23 @@ class UplinkError(Exception):
         self.retryable = retryable
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects: they could forward the bearer token elsewhere or downgrade to http."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ARG002
+        raise urllib.error.HTTPError(req.full_url, code, "redirects are not allowed", headers, fp)
+
+
 class Uplink:
     def __init__(self, server_url: str, token: str, ca_file: str | None, timeout: float = 15.0) -> None:
         self._url = f"{server_url}/ingest/v1/batch"
         self._token = token
         self._timeout = timeout
-        self._ctx = ssl.create_default_context(cafile=ca_file) if server_url.startswith("https://") else None
+        ctx = ssl.create_default_context(cafile=ca_file) if server_url.startswith("https://") else None
+        handlers: list[urllib.request.BaseHandler] = [_NoRedirect()]
+        if ctx is not None:
+            handlers.append(urllib.request.HTTPSHandler(context=ctx))
+        self._opener = urllib.request.build_opener(*handlers)
 
     def send(self, batch: dict[str, Any]) -> int:
         """Posts a batch and returns the server's ackedSeq."""
@@ -36,7 +47,7 @@ class Uplink:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout, context=self._ctx) as res:  # noqa: S310 - URL is validated config
+            with self._opener.open(req, timeout=self._timeout) as res:  # noqa: S310 - URL is validated config
                 data = json.loads(res.read(65_536))
                 return int(data["ackedSeq"])
         except urllib.error.HTTPError as err:

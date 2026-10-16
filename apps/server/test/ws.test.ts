@@ -68,6 +68,16 @@ describe('websocket', () => {
     o.ws.close();
   });
 
+  it('caps live connections per user (oldest closed)', async () => {
+    const cookie = await loginAs(ctx.app, 'many@campus.example', ['Viewer']);
+    const first = await connect({ origin: ORIGIN, cookie });
+    const closed = new Promise<number>((r) => first.ws.on('close', (code) => r(code)));
+    const others = [];
+    for (let i = 0; i < 5; i++) others.push(await connect({ origin: ORIGIN, cookie }));
+    expect(await closed).toBe(4429);
+    for (const o of others) o.ws.close();
+  });
+
   it('closes the socket after logout on the next refresh', async () => {
     const cookie = await loginAs(ctx.app, 'b@campus.example', ['Viewer']);
     const c = await connect({ origin: ORIGIN, cookie });

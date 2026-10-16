@@ -1,4 +1,5 @@
 import type { NotificationSettings } from '@firesafety/shared';
+import { assertPublicHost } from '../../lib/net-guard.js';
 import { httpError, postWithTimeout, ProviderError } from './types.js';
 
 export interface SmsOptions {
@@ -33,6 +34,12 @@ export async function sendSms(
   const { url, method, contentType, bodyTemplate } = cfg.http;
   if (!url) throw new ProviderError('SMS HTTP provider is not configured', false);
   if (!url.startsWith('https://') && !opts.allowInsecure) throw new ProviderError('SMS provider URL must use https', false);
+  if (!opts.allowInsecure) {
+    // SSRF guard: the configured gateway must be a public internet host.
+    await assertPublicHost(new URL(url).hostname).catch(() => {
+      throw new ProviderError('SMS provider URL must point to a public host', false);
+    });
+  }
   let headers: Record<string, string> = {};
   if (secrets.smsHttpHeaders) {
     try {

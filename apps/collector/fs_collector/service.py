@@ -73,10 +73,14 @@ class Collector:
         if changes:
             self._wake.set()
 
-    async def on_notification(self, device: int, key: ObjKey, state: ObjState, meta: dict[str, Any]) -> None:
+    async def on_notification(self, device: int, key: ObjKey, state: ObjState, meta: dict[str, Any], source: Any = None) -> None:
         panel = self.panels.get(device)
         if panel is None:
             log.warning("notification from unconfigured device %s ignored", device)
+            return
+        # The device id inside the message is not proof of origin: require the configured panel address.
+        if source is not None and source != panel.client.addr:
+            log.warning("notification claiming device %s from unexpected address %s ignored", device, source)
             return
         self._emit(device, panel.state.apply_notification(key, state), "notification", meta)
 

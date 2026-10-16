@@ -37,6 +37,8 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiRequestError) {
     switch (err.status) {
       case 400:
+        if (err.body?.error === 'code_invalid') return 'הקוד שגוי.';
+        if (err.body?.error === 'code_expired') return 'תוקף הקוד פג. נא לבקש קוד חדש.';
         return 'הנתונים שהוזנו אינם תקינים. נא לבדוק את השדות המסומנים.';
       case 401:
         return 'פג תוקף ההתחברות. נא להתחבר מחדש.';
@@ -55,7 +57,9 @@ export function errorMessage(err: unknown): string {
       case 503:
         return 'סריקת האבטחה אינה זמינה כרגע. נא לנסות שוב מאוחר יותר.';
       case 429:
-        return 'יותר מדי בקשות. נא לנסות שוב בעוד דקה.';
+        return err.body?.error === 'too_many_attempts' ? 'יותר מדי ניסיונות. נא לבקש קוד חדש.' : 'יותר מדי בקשות. נא לנסות שוב בעוד כמה דקות.';
+      case 502:
+        return 'השליחה לספק נכשלה. נא לבדוק את הגדרות הספק או לנסות שוב.';
       default:
         return 'אירעה שגיאה. נא לנסות שוב.';
     }

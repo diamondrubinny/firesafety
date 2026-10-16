@@ -69,6 +69,25 @@ export class SettingsService {
     const current = await this.get();
     const secrets: StoredSecrets = { ...current.secrets };
     const changed: string[] = [];
+    // A stored secret is bound to its destination: changing where it would be sent drops it,
+    // unless a new value is supplied in the same request (prevents redirecting a saved API key).
+    const prev = current.settings;
+    const origin = (u: string) => {
+      try {
+        return new URL(u).origin;
+      } catch {
+        return u;
+      }
+    };
+    const unbind = (name: SecretName, destinationChanged: boolean) => {
+      if (destinationChanged && patch[name] === undefined && secrets[name]) {
+        delete secrets[name];
+        changed.push(`secret:${name}:cleared-destination-changed`);
+      }
+    };
+    unbind('smsHttpHeaders', origin(prev.sms.http.url) !== origin(settings.sms.http.url));
+    unbind('emailPassword', prev.email.host !== settings.email.host || prev.email.port !== settings.email.port || prev.email.user !== settings.email.user);
+    unbind('twilioAuthToken', prev.sms.twilio.accountSid !== settings.sms.twilio.accountSid);
     for (const name of SECRET_NAMES) {
       const v = patch[name];
       if (v === undefined) continue;

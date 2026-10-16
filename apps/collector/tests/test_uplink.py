@@ -12,6 +12,11 @@ class Handler(BaseHTTPRequestHandler):
     seen: list = []
 
     def do_POST(self):  # noqa: N802
+        if self.path.startswith("/redirect"):
+            self.send_response(307)
+            self.send_header("Location", "http://127.0.0.1:9/steal")
+            self.end_headers()
+            return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         Handler.seen.append((self.path, self.headers["Authorization"], body))
         self.send_response(Handler.status)
@@ -53,3 +58,11 @@ def test_unreachable_is_retryable():
     with pytest.raises(UplinkError) as err:
         Uplink("http://127.0.0.1:9", "fsc_" + "x" * 30, None, timeout=1).send({})
     assert err.value.retryable
+
+
+def test_redirects_are_never_followed(server):
+    Handler.seen = []
+    with pytest.raises(UplinkError) as err:
+        Uplink(f"{server}/redirect", "fsc_" + "x" * 30, None).send({"a": 1})
+    assert err.value.retryable is False
+    assert Handler.seen == []  # the token was not re-sent anywhere

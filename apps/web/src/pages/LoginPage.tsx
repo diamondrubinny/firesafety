@@ -18,7 +18,9 @@ const GENERIC_ERROR = 'ההתחברות נכשלה. נא לנסות שוב או 
 
 /** Only same-site relative paths (mirrors the server-side check). */
 function safeReturnTo(v: string | null): string {
-  return v && v.startsWith('/') && !v.startsWith('//') && !v.includes('\\') ? v : '/';
+  if (!v || v.length > 512) return '/';
+  if (!v.startsWith('/') || v.startsWith('//') || v.includes('\\') || /[\r\n\t]/.test(v)) return '/';
+  return v;
 }
 
 export function LoginPage() {

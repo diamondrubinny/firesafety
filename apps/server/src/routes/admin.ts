@@ -192,6 +192,25 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(201).send(meta);
   });
 
+  // Deactivation takes effect immediately: sessions revoked, live connections closed.
+  app.post('/users/:id/deactivate', async (req) => {
+    const me = requireUser(req);
+    const { id } = parse(idParamSchema, req.params);
+    if (id === me.id) throw badRequest('You cannot deactivate your own account');
+    await services.users.setActive(id, false);
+    await services.sessions.revokeAllForUser(id);
+    await audit(req, 'user.deactivate', 'user', id);
+    await app.hub.refresh();
+    return { ok: true };
+  });
+
+  app.post('/users/:id/activate', async (req) => {
+    const { id } = parse(idParamSchema, req.params);
+    await services.users.setActive(id, true);
+    await audit(req, 'user.activate', 'user', id);
+    return { ok: true };
+  });
+
   // Audit
   app.get('/audit', async (req) => {
     const { limit, offset } = parse(paginationSchema, req.query);

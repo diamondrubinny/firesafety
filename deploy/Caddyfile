@@ -18,8 +18,16 @@
 		-Server
 	}
 
+	# Collectors only: the ingest API is refused for any source outside INGEST_ALLOWED_CIDRS
+	# (the on-site collector network). Defense in depth on top of per-collector tokens.
+	@ingestDenied {
+		path /ingest/*
+		not remote_ip {$INGEST_ALLOWED_CIDRS}
+	}
+
 	@backend path /api/* /auth/* /ingest/* /healthz
 	handle @backend {
+		respond @ingestDenied 403
 		reverse_proxy server:3000
 	}
 

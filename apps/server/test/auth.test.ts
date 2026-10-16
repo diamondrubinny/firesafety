@@ -62,6 +62,28 @@ describe('session auth', () => {
     expect(me.statusCode).toBe(401);
   });
 
+  it('admin deactivation revokes sessions immediately; self-deactivation is refused', async () => {
+    ctx = await createTestApp();
+    const admin = await loginAs(ctx.app, 'adm@campus.example', ['FireAdmin']);
+    const victim = await loginAs(ctx.app, 'v@campus.example', ['SafetyOfficer']);
+    const victimId = (await ctx.app.inject({ method: 'GET', url: '/api/me', headers: { cookie: victim } })).json().id;
+    const adminId = (await ctx.app.inject({ method: 'GET', url: '/api/me', headers: { cookie: admin } })).json().id;
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/users/${victimId}/deactivate`, headers: write(admin) })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/me', headers: { cookie: victim } })).statusCode).toBe(401);
+    expect((await ctx.db.query('SELECT count(*)::int AS n FROM user_session WHERE user_id = $1', [victimId])).rows[0].n).toBe(0);
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/users/${adminId}/deactivate`, headers: write(admin) })).statusCode).toBe(400);
+  });
+
+  it('background session checks do not extend the idle timeout', async () => {
+    ctx = await createTestApp();
+    const cookie = await loginAs(ctx.app, 'idle2@campus.example', ['Viewer']);
+    await ctx.db.query("UPDATE user_session SET last_seen_at = now() - interval '30 minutes'");
+    const token = cookie.split('=')[1]!;
+    expect(await ctx.app.services.sessions.check(token)).not.toBeNull();
+    const { rows } = await ctx.db.query("SELECT last_seen_at < now() - interval '29 minutes' AS still_old FROM user_session");
+    expect(rows[0].still_old).toBe(true);
+  });
+
   it('rejects sessions of deactivated users', async () => {
     ctx = await createTestApp();
     const cookie = await loginAs(ctx.app, 'gone@campus.example', ['Viewer']);
