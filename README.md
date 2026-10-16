@@ -4,7 +4,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 
 > ⚠️ This system is **not** a listed fire alarm control or annunciation device. It must never replace the certified fire alarm panels, their annunciators, the monitoring centre or emergency procedures. It never sends commands to panels.
 
-**Status:** Phase 4 (notifications) — push, SMS, WhatsApp (official Cloud API) and e-mail to safety officers, with grouping, retries and escalation of unacknowledged fire alarms. Every provider is configured in the admin **Notification settings** screen (secrets encrypted, write-only). Earlier: Phase 3 (floor maps) — floors per building, floor-plan upload with antivirus scanning, point placement (mouse or keyboard), live floor view with an accessible table, "show on map" from alarms, CSV import of point mapping. Builds on Phase 2 (read-only BACnet collector, live alarm board). SMS/WhatsApp/Push notifications arrive in Phase 4.
+**Status:** Phase 5 (procedures & reports) — per-alarm procedure checklists (building-specific or global, frozen per alarm), alarm/response-time/open-issues reports with safe CSV export and print view, and automatic data retention. Earlier: Phase 4 (notifications) — push, SMS, WhatsApp (official Cloud API) and e-mail to safety officers, with grouping, retries and escalation of unacknowledged fire alarms. Every provider is configured in the admin **Notification settings** screen (secrets encrypted, write-only). Earlier: Phase 3 (floor maps) — floors per building, floor-plan upload with antivirus scanning, point placement (mouse or keyboard), live floor view with an accessible table, "show on map" from alarms, CSV import of point mapping. Builds on Phase 2 (read-only BACnet collector, live alarm board). SMS/WhatsApp/Push notifications arrive in Phase 4.
 
 ## Documentation (Hebrew)
 
@@ -14,6 +14,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [04 — Phase 2 plan](docs/04-phase2-plan.md)
 - [05 — Phase 3 plan](docs/05-phase3-plan.md)
 - [06 — Phase 4 plan](docs/06-phase4-plan.md)
+- [07 — Phase 5 plan](docs/07-phase5-plan.md)
 
 ## Confidentiality rule for this repository
 

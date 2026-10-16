@@ -54,6 +54,11 @@ const envSchema = z
     /** Route outbound HTTPS (providers, Entra) through HTTPS_PROXY/NO_PROXY from the environment. */
     OUTBOUND_PROXY_FROM_ENV: bool.default(false),
 
+    /** Data retention (days). Defaults require approval by the privacy officer / legal counsel. */
+    RETENTION_EVENT_LOG_DAYS: z.coerce.number().int().min(30).max(3650).default(730),
+    RETENTION_NOTIFICATIONS_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
+    RETENTION_ALARMS_DAYS: z.coerce.number().int().min(365).max(7300).default(2555),
+
     RATE_LIMIT_MAX: z.coerce.number().int().min(10).default(300),
   })
   .superRefine((env, ctx) => {

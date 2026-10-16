@@ -8,6 +8,7 @@ import { formatDateTime } from '../lib/format';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { CategoryBadge } from '../components/Category';
 import { ErrorBox, Loading } from '../components/Status';
+import { ProcedureChecklist } from '../components/ProcedureChecklist';
 
 const SOURCE_HE: Record<string, string> = { notification: 'הודעת רכזת', poll: 'סריקה', inventory: 'סריקת מלאי', snapshot: 'סנכרון' };
 
@@ -61,6 +62,8 @@ export function AlarmDetailPage() {
             <p><Link className="btn" to={`/floors/${data.floorId}?point=${data.pointId}`}>הצגה במפת הקומה</Link></p>
           )}
           <p className="muted small">אישור הקבלה נרשם במערכת זו בלבד, ואינו משפיע על הרכזת.</p>
+
+          <ProcedureChecklist alarmId={data.id} canHandle={canHandle} />
 
           {canHandle && !data.ackedAt && (
             <form onSubmit={submitAck} className="card">

@@ -21,6 +21,8 @@ import { AdminFloorEditorPage } from './pages/AdminFloorEditorPage';
 import { MyNotificationsPage } from './pages/MyNotificationsPage';
 import { AdminNotificationSettingsPage } from './pages/AdminNotificationSettingsPage';
 import { AdminNotificationLogPage } from './pages/AdminNotificationLogPage';
+import { AdminProceduresPage } from './pages/AdminProceduresPage';
+import { ReportsPage } from './pages/ReportsPage';
 
 function RequireAuth({ children, roles }: { children: ReactNode; roles?: Role[] }) {
   const { me, loading, hasRole } = useAuth();
@@ -43,6 +45,8 @@ export function App() {
         <Route path="/history" element={<RequireAuth><AlarmHistoryPage /></RequireAuth>} />
         <Route path="/floors/:id" element={<RequireAuth><FloorPage /></RequireAuth>} />
         <Route path="/me/notifications" element={<RequireAuth><MyNotificationsPage /></RequireAuth>} />
+        <Route path="/reports" element={<RequireAuth roles={['SafetyOfficer', 'FireAdmin']}><ReportsPage /></RequireAuth>} />
+        <Route path="/admin/procedures" element={<RequireAuth roles={['FireAdmin']}><AdminProceduresPage /></RequireAuth>} />
         <Route path="/admin/settings/notifications" element={<RequireAuth roles={['FireAdmin']}><AdminNotificationSettingsPage /></RequireAuth>} />
         <Route path="/admin/notifications" element={<RequireAuth roles={['FireAdmin']}><AdminNotificationLogPage /></RequireAuth>} />
         <Route path="/admin/floors/:id" element={<RequireAuth roles={['FireAdmin']}><AdminFloorEditorPage /></RequireAuth>} />

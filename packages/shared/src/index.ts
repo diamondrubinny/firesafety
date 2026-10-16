@@ -4,3 +4,4 @@ export * from './types.js';
 export * from './alarms.js';
 export * from './ingest.js';
 export * from './notifications.js';
+export * from './procedures.js';

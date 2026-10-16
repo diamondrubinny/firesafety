@@ -17,12 +17,14 @@ export function Layout() {
             <li><NavLink to="/" end>אירועים פעילים</NavLink></li>
             <li><NavLink to="/history">היסטוריה</NavLink></li>
             <li><NavLink to="/buildings">מבנים</NavLink></li>
+            {hasRole('SafetyOfficer', 'FireAdmin') && <li><NavLink to="/reports">דוחות</NavLink></li>}
             {hasRole('FireAdmin') && (
               <>
                 <li><NavLink to="/admin/buildings">ניהול מבנים</NavLink></li>
                 <li><NavLink to="/admin/collectors">Collectors</NavLink></li>
                 <li><NavLink to="/admin/points">רכזות ונקודות</NavLink></li>
                 <li><NavLink to="/admin/users">משתמשים והרשאות</NavLink></li>
+                <li><NavLink to="/admin/procedures">נהלים</NavLink></li>
                 <li><NavLink to="/admin/settings/notifications">הגדרות התראות</NavLink></li>
                 <li><NavLink to="/admin/audit">יומן פעולות</NavLink></li>
               </>

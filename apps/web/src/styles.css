@@ -218,3 +218,17 @@ textarea { font: inherit; padding: 0.5rem; border: 1px solid var(--border); bord
 .sticky-actions { position: sticky; inset-block-end: 0; background: var(--bg); padding-block: 0.75rem; border-block-start: 1px solid var(--border); }
 .badge-neutral { color: var(--muted); }
 .field > .btn { align-self: flex-start; }
+
+/* ---- Phase 5: procedures and reports ---- */
+.checklist { padding-inline-start: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.checklist li.done > .checkbox span { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--muted); }
+.table caption { text-align: start; font-weight: 700; padding-block: 0.25rem; }
+
+@media print {
+  .site-header, .site-footer, .disclaimer, .system-banner, .skip-link, .no-print, nav[aria-label='דפדוף'] { display: none !important; }
+  body, :root { background: #fff; color: #000; }
+  main { max-inline-size: none; padding: 0; }
+  .table { font-size: 10pt; }
+  .table tr { break-inside: avoid; }
+  a { color: #000; text-decoration: none; }
+}

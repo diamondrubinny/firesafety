@@ -23,6 +23,9 @@ import { SettingsService } from './services/settings.js';
 import { ContactService } from './services/contacts.js';
 import { NotificationService } from './services/notifications.js';
 import { DEV_ONLY_KEY, SecretBox } from './lib/secretbox.js';
+import { ProcedureService } from './services/procedures.js';
+import { ReportService } from './services/reports.js';
+import { purgeExpired } from './services/retention.js';
 import { EntraOidcProvider, type OidcProvider } from './auth/oidc.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
@@ -34,6 +37,8 @@ import { ingestRoutes } from './routes/ingest.js';
 import { wsRoutes } from './routes/ws.js';
 import { floorRoutes } from './routes/floors.js';
 import { adminNotificationRoutes, myNotificationRoutes } from './routes/notifications.js';
+import { adminProcedureRoutes, alarmProcedureRoutes } from './routes/procedures.js';
+import { reportRoutes } from './routes/reports.js';
 
 export interface Services {
   audit: AuditService;
@@ -49,6 +54,8 @@ export interface Services {
   settings: SettingsService;
   contacts: ContactService;
   notifications: NotificationService;
+  procedures: ProcedureService;
+  reports: ReportService;
 }
 
 declare module 'fastify' {
@@ -62,6 +69,8 @@ declare module 'fastify' {
     runJobs: () => Promise<void>;
     /** Runs one notification cycle (plan, escalate, deliver). Exposed for tests. */
     runNotifications: () => Promise<void>;
+    /** Deletes data past its retention period. Exposed for tests. */
+    runRetention: () => Promise<Record<string, number>>;
     cookieNames: { session: string; login: string };
   }
 }
@@ -134,7 +143,16 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       },
       app.log,
     ),
+    procedures: new ProcedureService(db),
+    reports: new ReportService(db),
   });
+  app.decorate('runRetention', () =>
+    purgeExpired(db, {
+      eventLogDays: config.RETENTION_EVENT_LOG_DAYS,
+      notificationDays: config.RETENTION_NOTIFICATIONS_DAYS,
+      alarmDays: config.RETENTION_ALARMS_DAYS,
+    }),
+  );
   app.decorate('hub', new RealtimeHub(db, app.services.sessions));
   app.decorate('runJobs', async () => {
     app.hub.notify(await app.services.engine.checkCollectors(config.COLLECTOR_STALE_SECONDS));
@@ -219,6 +237,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(floorRoutes, { prefix: '/api' });
   await app.register(myNotificationRoutes, { prefix: '/api' });
   await app.register(adminNotificationRoutes, { prefix: '/api/admin' });
+  await app.register(alarmProcedureRoutes, { prefix: '/api' });
+  await app.register(adminProcedureRoutes, { prefix: '/api/admin' });
+  await app.register(reportRoutes, { prefix: '/api' });
   await app.register(ingestRoutes);
 
   if (opts.backgroundJobs ?? true) {
@@ -230,9 +251,17 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       app.runNotifications().catch((err: unknown) => app.log.error({ err }, 'notification cycle failed'));
     }, 2_000);
     notify.unref();
+    const retention = setInterval(() => {
+      app
+        .runRetention()
+        .then((r) => app.log.info({ purged: r }, 'retention purge'))
+        .catch((err: unknown) => app.log.error({ err }, 'retention purge failed'));
+    }, 6 * 3600_000);
+    retention.unref();
     app.addHook('onClose', async () => {
       clearInterval(jobs);
       clearInterval(notify);
+      clearInterval(retention);
     });
   }
   app.addHook('preClose', async () => app.hub.closeAll());
