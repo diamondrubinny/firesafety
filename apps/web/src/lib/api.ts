@@ -29,7 +29,7 @@ export const api = {
   patch: <T>(url: string, body: unknown) => request<T>('PATCH', url, body),
   del: (url: string) => request<void>('DELETE', url),
   /** Raw body upload (e.g. image, CSV). */
-  raw: <T>(method: 'PUT' | 'POST', url: string, body: BodyInit, type: string) => request<T>(method, url, undefined, { body, type }),
+  raw: <T>(method: 'PUT' | 'POST' | 'DELETE', url: string, body: BodyInit, type: string) => request<T>(method, url, undefined, { body, type }),
 };
 
 /** Maps API errors to safe Hebrew messages. Server messages are not shown verbatim. */

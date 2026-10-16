@@ -19,6 +19,10 @@ import { FileService } from './services/files.js';
 import { FloorService } from './services/floors.js';
 import { PointImportService } from './services/point-import.js';
 import { ClamdScanner, NoopScanner, type FileScanner } from './services/scanner.js';
+import { SettingsService } from './services/settings.js';
+import { ContactService } from './services/contacts.js';
+import { NotificationService } from './services/notifications.js';
+import { DEV_ONLY_KEY, SecretBox } from './lib/secretbox.js';
 import { EntraOidcProvider, type OidcProvider } from './auth/oidc.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
@@ -29,6 +33,7 @@ import { alarmRoutes } from './routes/alarms.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { wsRoutes } from './routes/ws.js';
 import { floorRoutes } from './routes/floors.js';
+import { adminNotificationRoutes, myNotificationRoutes } from './routes/notifications.js';
 
 export interface Services {
   audit: AuditService;
@@ -41,6 +46,9 @@ export interface Services {
   files: FileService;
   floors: FloorService;
   pointImport: PointImportService;
+  settings: SettingsService;
+  contacts: ContactService;
+  notifications: NotificationService;
 }
 
 declare module 'fastify' {
@@ -52,6 +60,8 @@ declare module 'fastify' {
     hub: RealtimeHub;
     /** Runs periodic jobs once (watchdog, WS session refresh, purge). Exposed for tests. */
     runJobs: () => Promise<void>;
+    /** Runs one notification cycle (plan, escalate, deliver). Exposed for tests. */
+    runNotifications: () => Promise<void>;
     cookieNames: { session: string; login: string };
   }
 }
@@ -85,6 +95,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
 
   app.decorate('config', config);
   app.decorate('db', db);
+  if (!config.SETTINGS_ENCRYPTION_KEY) app.log.warn('SETTINGS_ENCRYPTION_KEY not set: using an insecure development key');
+  const box = new SecretBox(config.SETTINGS_ENCRYPTION_KEY ?? DEV_ONLY_KEY);
+  const settings = new SettingsService(db, box);
+  const contacts = new ContactService(db, box);
   app.decorate('services', {
     audit: new AuditService(db),
     users: new UserService(db),
@@ -105,11 +119,36 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     ),
     floors: new FloorService(db),
     pointImport: new PointImportService(db),
+    settings,
+    contacts,
+    notifications: new NotificationService(
+      db,
+      settings,
+      contacts,
+      {
+        publicOrigin: config.PUBLIC_ORIGIN,
+        twilioBase: config.TWILIO_API_BASE,
+        whatsappBase: config.WHATSAPP_API_BASE,
+        allowInsecure: config.NOTIFY_ALLOW_INSECURE_ENDPOINTS,
+        pushAllowlist: config.PUSH_ENDPOINT_ALLOWLIST.split(',').map((h) => h.trim()).filter(Boolean),
+      },
+      app.log,
+    ),
   });
   app.decorate('hub', new RealtimeHub(db, app.services.sessions));
   app.decorate('runJobs', async () => {
     app.hub.notify(await app.services.engine.checkCollectors(config.COLLECTOR_STALE_SECONDS));
     await app.hub.refresh();
+  });
+  let notifying = false;
+  app.decorate('runNotifications', async () => {
+    if (notifying) return; // never overlap cycles
+    notifying = true;
+    try {
+      await app.services.notifications.runOnce();
+    } finally {
+      notifying = false;
+    }
   });
   app.decorate(
     'oidc',
@@ -178,6 +217,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(alarmRoutes, { prefix: '/api' });
   await app.register(wsRoutes, { prefix: '/api' });
   await app.register(floorRoutes, { prefix: '/api' });
+  await app.register(myNotificationRoutes, { prefix: '/api' });
+  await app.register(adminNotificationRoutes, { prefix: '/api/admin' });
   await app.register(ingestRoutes);
 
   if (opts.backgroundJobs ?? true) {
@@ -185,7 +226,14 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       app.runJobs().catch((err: unknown) => app.log.error({ err }, 'background job failed'));
     }, 10_000);
     jobs.unref();
-    app.addHook('onClose', async () => clearInterval(jobs));
+    const notify = setInterval(() => {
+      app.runNotifications().catch((err: unknown) => app.log.error({ err }, 'notification cycle failed'));
+    }, 2_000);
+    notify.unref();
+    app.addHook('onClose', async () => {
+      clearInterval(jobs);
+      clearInterval(notify);
+    });
   }
   app.addHook('preClose', async () => app.hub.closeAll());
 

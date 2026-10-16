@@ -17,6 +17,8 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
     AUDIT_IP_PEPPER: 'test-pepper-test-pepper-test-pepper-0000',
     AUTH_MODE: 'dev',
     LOG_LEVEL: 'fatal',
+    SETTINGS_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
+    NOTIFY_ALLOW_INSECURE_ENDPOINTS: 'true',
     ...overrides,
   });
 }
@@ -48,7 +50,7 @@ export async function createTestApp(
 /** TRUNCATE bypasses the append-only row trigger on audit_log; only the test role uses it. */
 export async function resetData(db: Db): Promise<void> {
   await db.query(
-    'TRUNCATE alarm_note, alarm, event_log, point, floor, stored_file, bacnet_device, collector, audit_log, user_building_scope, user_session, oidc_login_state, building, faculty, app_user RESTART IDENTITY CASCADE',
+    'TRUNCATE notification, push_subscription, user_contact, app_setting, alarm_note, alarm, event_log, point, floor, stored_file, bacnet_device, collector, audit_log, user_building_scope, user_session, oidc_login_state, building, faculty, app_user RESTART IDENTITY CASCADE',
   );
 }
 

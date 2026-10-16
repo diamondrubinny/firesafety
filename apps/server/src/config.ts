@@ -41,9 +41,25 @@ const envSchema = z
     CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
     CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
 
+    /** 32 random bytes, base64. Encrypts provider secrets and phone numbers at rest. */
+    SETTINGS_ENCRYPTION_KEY: z.string().optional(),
+    /** Push endpoints the server may POST to (SSRF protection). Comma-separated host suffixes. */
+    PUSH_ENDPOINT_ALLOWLIST: z
+      .string()
+      .default('fcm.googleapis.com,updates.push.services.mozilla.com,push.services.mozilla.com,push.apple.com,notify.windows.com'),
+    /** Development/test only: allow http:// provider and push endpoints (e.g. local fakes). */
+    NOTIFY_ALLOW_INSECURE_ENDPOINTS: bool.default(false),
+    TWILIO_API_BASE: z.url().default('https://api.twilio.com'),
+    WHATSAPP_API_BASE: z.url().default('https://graph.facebook.com'),
+    /** Route outbound HTTPS (providers, Entra) through HTTPS_PROXY/NO_PROXY from the environment. */
+    OUTBOUND_PROXY_FROM_ENV: bool.default(false),
+
     RATE_LIMIT_MAX: z.coerce.number().int().min(10).default(300),
   })
   .superRefine((env, ctx) => {
+    if (env.SETTINGS_ENCRYPTION_KEY && Buffer.from(env.SETTINGS_ENCRYPTION_KEY, 'base64').length !== 32) {
+      ctx.addIssue({ code: 'custom', path: ['SETTINGS_ENCRYPTION_KEY'], message: 'SETTINGS_ENCRYPTION_KEY must be 32 bytes, base64-encoded' });
+    }
     if (env.AUTH_MODE === 'oidc') {
       for (const key of ['OIDC_ISSUER', 'OIDC_TENANT_ID', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const) {
         if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required when AUTH_MODE=oidc` });
@@ -55,6 +71,12 @@ const envSchema = z
       }
       if (!env.COOKIE_SECURE) {
         ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'COOKIE_SECURE must be true in production' });
+      }
+      if (!env.SETTINGS_ENCRYPTION_KEY) {
+        ctx.addIssue({ code: 'custom', path: ['SETTINGS_ENCRYPTION_KEY'], message: 'SETTINGS_ENCRYPTION_KEY is required in production' });
+      }
+      if (env.NOTIFY_ALLOW_INSECURE_ENDPOINTS) {
+        ctx.addIssue({ code: 'custom', path: ['NOTIFY_ALLOW_INSECURE_ENDPOINTS'], message: 'NOTIFY_ALLOW_INSECURE_ENDPOINTS is forbidden in production' });
       }
       if (env.UPLOAD_SCANNER !== 'clamav') {
         ctx.addIssue({ code: 'custom', path: ['UPLOAD_SCANNER'], message: 'UPLOAD_SCANNER must be clamav in production' });

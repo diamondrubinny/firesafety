@@ -152,7 +152,7 @@ describe('floor plan upload', () => {
       OIDC_CLIENT_SECRET: 's',
     };
     expect(() => loadConfig(env)).toThrow(/UPLOAD_SCANNER must be clamav/);
-    expect(() => loadConfig({ ...env, UPLOAD_SCANNER: 'clamav' })).not.toThrow();
+    expect(() => loadConfig({ ...env, UPLOAD_SCANNER: 'clamav', SETTINGS_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64') })).not.toThrow();
   });
 });
 

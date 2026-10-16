@@ -4,6 +4,11 @@ import { migrate } from './db/migrate.js';
 import { buildApp } from './app.js';
 
 const config = loadConfig();
+if (config.OUTBOUND_PROXY_FROM_ENV) {
+  // Organisation egress proxy for providers / Entra (HTTPS_PROXY, NO_PROXY).
+  const { EnvHttpProxyAgent, setGlobalDispatcher } = await import('undici');
+  setGlobalDispatcher(new EnvHttpProxyAgent());
+}
 const db = createPool(config);
 await migrate(db);
 const app = await buildApp({ config, db });

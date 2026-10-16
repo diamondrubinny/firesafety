@@ -28,6 +28,9 @@
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
 		header /index.html Cache-Control "no-store"
+		# The service worker must always be revalidated so fixes reach every device.
+		header /sw.js Cache-Control "no-cache"
+		header /manifest.webmanifest Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
 	}

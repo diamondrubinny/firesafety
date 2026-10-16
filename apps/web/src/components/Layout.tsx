@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { ROLE_LABELS_HE } from '@firesafety/shared';
 import { useAuth } from '../lib/auth';
 import { SystemBanner } from './SystemBanner';
@@ -23,6 +23,7 @@ export function Layout() {
                 <li><NavLink to="/admin/collectors">Collectors</NavLink></li>
                 <li><NavLink to="/admin/points">רכזות ונקודות</NavLink></li>
                 <li><NavLink to="/admin/users">משתמשים והרשאות</NavLink></li>
+                <li><NavLink to="/admin/settings/notifications">הגדרות התראות</NavLink></li>
                 <li><NavLink to="/admin/audit">יומן פעולות</NavLink></li>
               </>
             )}
@@ -34,6 +35,7 @@ export function Layout() {
               {me.displayName}
               <span className="muted"> ({me.roles.map((r) => ROLE_LABELS_HE[r]).join(', ')})</span>
             </span>
+            <Link to="/me/notifications" className="btn btn-small">ההתראות שלי</Link>
             <button type="button" className="btn btn-small" onClick={() => void logout()}>
               התנתקות
             </button>

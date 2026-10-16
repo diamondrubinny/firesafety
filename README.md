@@ -4,7 +4,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 
 > ⚠️ This system is **not** a listed fire alarm control or annunciation device. It must never replace the certified fire alarm panels, their annunciators, the monitoring centre or emergency procedures. It never sends commands to panels.
 
-**Status:** Phase 3 (floor maps) — floors per building, floor-plan upload with antivirus scanning, point placement (mouse or keyboard), live floor view with an accessible table, "show on map" from alarms, CSV import of point mapping. Builds on Phase 2 (read-only BACnet collector, live alarm board). SMS/WhatsApp/Push notifications arrive in Phase 4.
+**Status:** Phase 4 (notifications) — push, SMS, WhatsApp (official Cloud API) and e-mail to safety officers, with grouping, retries and escalation of unacknowledged fire alarms. Every provider is configured in the admin **Notification settings** screen (secrets encrypted, write-only). Earlier: Phase 3 (floor maps) — floors per building, floor-plan upload with antivirus scanning, point placement (mouse or keyboard), live floor view with an accessible table, "show on map" from alarms, CSV import of point mapping. Builds on Phase 2 (read-only BACnet collector, live alarm board). SMS/WhatsApp/Push notifications arrive in Phase 4.
 
 ## Documentation (Hebrew)
 
@@ -13,6 +13,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [03 — Phase 1 plan](docs/03-phase1-plan.md)
 - [04 — Phase 2 plan](docs/04-phase2-plan.md)
 - [05 — Phase 3 plan](docs/05-phase3-plan.md)
+- [06 — Phase 4 plan](docs/06-phase4-plan.md)
 
 ## Confidentiality rule for this repository
 
@@ -127,6 +128,17 @@ docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 
 Floor plans: export to PNG/JPEG/WebP (max 10MB). SVG and PDF are intentionally not accepted. Plans are stored in the database (included in DB backups) and are never committed to this repository.
 
+### Notifications
+
+Configure in the UI: **הגדרות התראות** (FireAdmin). Users set their phone, channels and WhatsApp consent under **ההתראות שלי**, and can enable push per device.
+
+- **SMS:** Twilio, or a *generic HTTP* provider (URL / headers / body template with `{{to}}` and `{{text}}`) for any Israeli SMS gateway — fill it in from the vendor's official documentation.
+- **WhatsApp:** official WhatsApp Business Cloud API only. Requires an approved template with two parameters (`{{1}}` description, `{{2}}` link), a Phone Number ID and an access token. QR-code (WhatsApp Web) automation is intentionally not supported.
+- **E-mail:** SMTP with TLS (STARTTLS required unless port 465).
+- **Push:** VAPID keys are generated automatically. iOS requires adding the site to the home screen.
+- Links in messages open the alarm page (behind SSO); there is no "ack by link", because messaging apps pre-fetch links.
+- The server needs outbound HTTPS to the chosen providers (set `OUTBOUND_PROXY_FROM_ENV=true` to use the organisation's proxy).
+
 ### Collector (on-site)
 
 Runs on a small Linux host/VM **inside the fire-panel network**, read-only, outbound HTTPS only:
@@ -146,6 +158,8 @@ Prerequisites from the panel contractor (outside this repo): BACnet/IP enabled o
 - [ ] Encrypted, off-host database backups, with a tested restore.
 - [ ] Entra app registration reviewed by IT; MFA enforced via Conditional Access.
 - [ ] TLS certificate from the organisation's CA; firewall allows only 443 inbound.
+- [ ] Generate `SETTINGS_ENCRYPTION_KEY`, store it in the secret manager, and include it in the backup/restore runbook.
+- [ ] Configure and test every notification provider from the settings screen; review the WhatsApp/SMS providers with the privacy officer (DPA, data leaving Israel).
 - [ ] Verify ClamAV detection with the EICAR test file on the deployed stack, and that signatures update (freshclam).
 - [ ] Verify the BACnet category mapping (`packages/shared/src/alarms.ts`) against the actual Siemens panel object list/PICS.
 - [ ] Firewall: collector host → panels UDP 47808; collector host → server 443 only.
