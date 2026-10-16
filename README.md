@@ -15,6 +15,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [05 — Phase 3 plan](docs/05-phase3-plan.md)
 - [06 — Phase 4 plan](docs/06-phase4-plan.md)
 - [07 — Phase 5 plan](docs/07-phase5-plan.md)
+- [08 — Production pack: threat model, data map, checklist, pilot runbook](docs/08-production-pack.md)
 
 ## Confidentiality rule for this repository
 
@@ -139,6 +140,24 @@ Configure in the UI: **הגדרות התראות** (FireAdmin). Users set their 
 - **Push:** VAPID keys are generated automatically. iOS requires adding the site to the home screen.
 - Links in messages open the alarm page (behind SSO); there is no "ack by link", because messaging apps pre-fetch links.
 - The server needs outbound HTTPS to the chosen providers (set `OUTBOUND_PROXY_FROM_ENV=true` to use the organisation's proxy).
+
+### Database least privilege (recommended)
+
+```bash
+# once, as a PostgreSQL superuser, on an empty database:
+psql -v owner_pw="'<owner-password>'" -v app_pw="'<app-password>'" -d firesafety -f deploy/sql/least-privilege.sql
+```
+Then set `MIGRATION_DATABASE_URL` (role `fs_owner`, runs migrations) and `DATABASE_URL` (role `fs_app`, used by the server). After each migration run the server makes `audit_log` append-only for every non-owner role. Verified: `fs_app` cannot UPDATE/DELETE/TRUNCATE the audit log, cannot TRUNCATE other tables, and cannot create or drop tables.
+
+### Backups
+
+```bash
+# daily (cron), as a user with DB read access; passphrase file chmod 600, stored apart from the backups
+BACKUP_DIR=/srv/backups PASSPHRASE_FILE=/etc/firesafety/backup.pass KEEP_DAYS=30 deploy/backup/backup.sh
+# monthly restore test into a scratch database
+PASSPHRASE_FILE=/etc/firesafety/backup.pass deploy/backup/restore.sh /srv/backups/firesafety-<stamp>.dump.gpg
+```
+Backups are `pg_dump` custom format encrypted with GPG (AES-256) plus a SHA-256 checksum. Keep `SETTINGS_ENCRYPTION_KEY` backed up separately: without it, encrypted provider secrets and phone numbers cannot be read.
 
 ### Collector (on-site)
 

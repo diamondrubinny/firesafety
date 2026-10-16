@@ -10,7 +10,7 @@ import { BuildingDetailPage } from './pages/BuildingDetailPage';
 import { AdminBuildingsPage } from './pages/AdminBuildingsPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AuditPage } from './pages/AuditPage';
-import { AccessibilityPage, NotFoundPage, PrivacyPage } from './pages/StaticPages';
+import { AccessibilityPage, NotFoundPage, PrivacyPage, TermsPage } from './pages/StaticPages';
 import { AlarmsPage } from './pages/AlarmsPage';
 import { AlarmDetailPage } from './pages/AlarmDetailPage';
 import { AlarmHistoryPage } from './pages/AlarmHistoryPage';
@@ -40,6 +40,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route path="/accessibility" element={<AccessibilityPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/" element={<RequireAuth><AlarmsPage /></RequireAuth>} />
         <Route path="/alarms/:id" element={<RequireAuth><AlarmDetailPage /></RequireAuth>} />
         <Route path="/history" element={<RequireAuth><AlarmHistoryPage /></RequireAuth>} />

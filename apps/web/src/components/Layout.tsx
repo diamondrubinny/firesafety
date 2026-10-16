@@ -63,6 +63,7 @@ export function Footer() {
         <ul>
           <li><NavLink to="/accessibility">הצהרת נגישות</NavLink></li>
           <li><NavLink to="/privacy">מדיניות פרטיות</NavLink></li>
+          <li><NavLink to="/terms">תנאי שימוש</NavLink></li>
           <li><NavLink to="/privacy#cookies">הגדרות פרטיות ועוגיות</NavLink></li>
         </ul>
       </nav>

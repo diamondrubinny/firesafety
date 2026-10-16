@@ -40,3 +40,20 @@ export async function migrate(db: Db, dir: string = MIGRATIONS_DIR): Promise<str
   }
   return applied;
 }
+
+/**
+ * Makes the audit log append-only for every role except the schema owner.
+ * Run with the owner connection after migrations (least-privilege deployments).
+ */
+export async function lockAuditLog(owner: Db): Promise<void> {
+  await owner.query(`DO $$
+    DECLARE r record;
+    BEGIN
+      FOR r IN SELECT DISTINCT grantee FROM information_schema.role_table_grants
+               WHERE table_schema = 'public' AND table_name = 'audit_log' AND grantee NOT IN (current_user, 'PUBLIC')
+      LOOP
+        EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM %I', r.grantee);
+      END LOOP;
+      REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM PUBLIC;
+    END $$`);
+}

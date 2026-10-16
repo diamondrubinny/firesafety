@@ -1,6 +1,6 @@
 import { loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
-import { migrate } from './db/migrate.js';
+import { lockAuditLog, migrate } from './db/migrate.js';
 import { buildApp } from './app.js';
 
 const config = loadConfig();
@@ -10,7 +10,18 @@ if (config.OUTBOUND_PROXY_FROM_ENV) {
   setGlobalDispatcher(new EnvHttpProxyAgent());
 }
 const db = createPool(config);
-await migrate(db);
+if (config.MIGRATION_DATABASE_URL) {
+  // Migrations run with the schema owner; the server itself uses the restricted app role.
+  const owner = createPool({ DATABASE_URL: config.MIGRATION_DATABASE_URL, DATABASE_SSL: config.DATABASE_SSL });
+  try {
+    await migrate(owner);
+    await lockAuditLog(owner);
+  } finally {
+    await owner.end();
+  }
+} else {
+  await migrate(db);
+}
 const app = await buildApp({ config, db });
 
 const purge = setInterval(() => {

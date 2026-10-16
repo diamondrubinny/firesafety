@@ -16,6 +16,8 @@ const envSchema = z
 
     DATABASE_URL: z.string().min(1),
     DATABASE_SSL: bool.default(false),
+    /** Optional owner-role connection used only to run migrations (least privilege for the app role). */
+    MIGRATION_DATABASE_URL: z.string().min(1).optional(),
 
     /** Secret used to hash IPs in the audit log. Min 32 chars. */
     AUDIT_IP_PEPPER: z.string().min(32),
