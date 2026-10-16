@@ -155,25 +155,36 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     }),
   );
   app.decorate('hub', new RealtimeHub(db, app.services.sessions));
-  let jobsRunning = false;
+  const STUCK_CYCLE_MS = 120_000;
+  let jobsStartedAt: number | null = null;
+  let jobsId = 0;
   app.decorate('runJobs', async () => {
-    if (jobsRunning) return; // never overlap (slow DB must not pile up runs)
-    jobsRunning = true;
+    // Same guard as notifications: no overlap, but a stuck run cannot disable the watchdog.
+    if (jobsStartedAt !== null && Date.now() - jobsStartedAt < STUCK_CYCLE_MS) return;
+    if (jobsStartedAt !== null) app.log.error('background jobs appear stuck; starting a new run');
+    const id = ++jobsId;
+    jobsStartedAt = Date.now();
     try {
       app.hub.notify(await app.services.engine.checkCollectors(config.COLLECTOR_STALE_SECONDS));
       await app.hub.refresh();
     } finally {
-      jobsRunning = false;
+      if (id === jobsId) jobsStartedAt = null;
     }
   });
-  let notifying = false;
+  // Never overlap cycles, but never let one stuck cycle silence notifications forever either.
+  let cycleStartedAt: number | null = null;
+  let cycleId = 0;
   app.decorate('runNotifications', async () => {
-    if (notifying) return; // never overlap cycles
-    notifying = true;
+    if (cycleStartedAt !== null) {
+      if (Date.now() - cycleStartedAt < STUCK_CYCLE_MS) return;
+      app.log.error({ runningForMs: Date.now() - cycleStartedAt }, 'notification cycle appears stuck; starting a new one');
+    }
+    const id = ++cycleId;
+    cycleStartedAt = Date.now();
     try {
       await app.services.notifications.runOnce();
     } finally {
-      notifying = false;
+      if (id === cycleId) cycleStartedAt = null;
     }
   });
   app.decorate(
