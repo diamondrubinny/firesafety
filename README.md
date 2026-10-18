@@ -19,6 +19,7 @@ A **supplementary, monitoring-only** graphical management system for Siemens fir
 - [09 — Operational readiness: Docker verification, break-glass, key rotation](docs/09-phase-ops-plan.md)
 - [10 — User & operations guide](docs/10-user-guide.md)
 - [11 — Pilot tooling: performance report, external monitoring](docs/11-phase9-pilot-tooling.md)
+- [12 — Panel control (draft spec, awaiting approval)](docs/12-panel-control-plan.md)
 
 ## Confidentiality rule for this repository
 
